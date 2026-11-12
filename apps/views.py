@@ -20,8 +20,11 @@ from apps.auth_cookies import (
     clear_refresh_cookie, enforce_trusted_origin, no_store, read_refresh_cookie, set_refresh_cookie,
     token_response,
 )
-from apps.models import Product, Category, User, CartItem, Wishlist, Order, Payment, StoreSettings
+from apps.models import (
+    AdminAuditLog, Product, Category, User, CartItem, Wishlist, Order, Payment, StoreSettings,
+)
 from apps.send_message import send_email
+from apps.utils import client_ip
 from apps.serializers import (
     OTP_REGISTER, OTP_RESET,
     ProductListSerializer, ProductDetailSerializer, UserModelSerializer,
@@ -346,9 +349,19 @@ class ChangePasswordAPIView(APIView):
 
         # Boshqa qurilmalardagi sessiyalar bekor qilinadi, joriy qurilma yangi token oladi
         revoke_refresh_tokens(user)
-        return token_response(
-            RefreshToken.for_user(user), {'message': "Parol muvaffaqiyatli o'zgartirildi!"},
-        )
+        refresh = RefreshToken.for_user(user)
+        token = request.auth
+        if token is not None and token.get('adm'):
+            # Admin sessiyasi belgisi va boshlanish vaqti saqlanadi: aks holda parolini almashtirgan
+            # admin mutlaq muddati (ADMIN_SESSION_HOURS) yo'q oddiy sessiyaga o'tib qolardi
+            refresh['adm'] = True
+            refresh['sess'] = token.get('sess')
+        if user.is_staff:
+            AdminAuditLog.objects.create(
+                actor=user, actor_email=user.email or '', action='account.password',
+                summary="Parol almashtirildi", ip=client_ip(request) or None,
+            )
+        return token_response(refresh, {'message': "Parol muvaffaqiyatli o'zgartirildi!"})
 
 
 # ─── Savat ────────────────────────────────────────────────

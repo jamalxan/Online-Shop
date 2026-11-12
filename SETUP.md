@@ -79,6 +79,9 @@ npm run typecheck && npm run lint && npm run build
 - Kirish: `/admin/login` — parol, so'ng emailga kelgan 6 xonali kod. Sessiya 12 soatdan keyin
   tugaydi (`ADMIN_SESSION_HOURS`), "Chiqish" bosilganda token serverda bekor qilinadi.
 - Admin (`is_staff`) hisoblar oddiy `/api/token/` orqali kira olmaydi (`ADMIN_OTP_REQUIRED=True`).
+- **Sozlamalar → Hisob**: admin o'z parolini va kirish emailini o'zi almashtiradi. Email ikki
+  bosqichda almashadi — joriy parol, so'ng **yangi** manzilga kelgan kod; tasdiqlanmaguncha eski
+  email amal qiladi. Ikkalasi ham audit jurnaliga yoziladi.
 - Bo'limlar: Dashboard (tushum grafigi, KPI, navbatdagi ishlar), Buyurtmalar, To'lovlar,
   Mijozlar, Mahsulotlar, Kategoriyalar, Murojaatlar (+ obunachilar), Sozlamalar (+ faoliyat jurnali).
 - Har bir o'zgartirish **audit jurnaliga** yoziladi: kim, nima, qachon, qaysi IP'dan
@@ -110,6 +113,20 @@ Bosh sahifadan uydirma ma'lumotlar olib tashlangan: soxta mijoz sharhlari, "10K+
 "Certified Apple Reseller", bo'lib to'lash rejalari, trade-in va price-match. Tizimda bunday
 funksiyalar yo'q edi, shuning uchun tegishli komponentlar ham o'chirilgan (git tarixida bor).
 Bunday bloklarni faqat haqiqiy ma'lumot bilan qayta qo'shing.
+
+## Deploy (Docker) va CI/CD
+
+- `deploy/` — production stack: `Dockerfile.backend` (gunicorn), `Dockerfile.frontend` (Next.js),
+  `docker-compose.yml` (+ Postgres, Redis), `nginx/apexstore.conf` (bitta domen: `/api/`, `/media/`,
+  `/static/` → Django, qolgani → Next.js) va `deploy.sh`.
+- Serverda stack `/srv/apexstore/` da turadi: `.env` (maxfiy qiymatlar + `SITE_URL`), `app/` (shu
+  repozitoriy), `media/`, `static/`, `private_media/`. Qo'lda yangilash: `app/deploy/deploy.sh`.
+- `.github/workflows/ci-cd.yml`: har push va PR'da backend testlari, migratsiya tekshiruvi, `tsc`,
+  `eslint`. `master`ga push testlardan o'tsa va repozitoriy o'zgaruvchisi `DEPLOY_ENABLED=true`
+  bo'lsa, SSH orqali `deploy.sh` ishga tushadi (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`,
+  `DEPLOY_KNOWN_HOSTS` secret'lari kerak; CI kaliti serverda faqat shu skriptga cheklanadi).
+- Frontend build paytida jonli API'dan sahifalarni oldindan yaratadi, shuning uchun skript avval
+  backend'ni ko'taradi, keyin frontend'ni build qiladi.
 
 ## Production uchun tekshiruv ro'yxati
 

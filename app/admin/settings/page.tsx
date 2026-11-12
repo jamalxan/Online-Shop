@@ -1,17 +1,24 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { Check, History, ShieldCheck } from "lucide-react"
+import { Check, History, KeyRound, Mail, ShieldCheck } from "lucide-react"
 import {
   EmptyState, ErrorBanner, Field, FilterTabs, PageHeader, Pagination, Panel, PanelHeader, SearchInput,
   SkeletonRows, Spinner, buttonClass, inputClass, useDebounced, useLoader,
 } from "@/components/admin/ui"
-import { adminGetAuditLog, adminGetSettings, adminUpdateSettings } from "@/lib/api"
+import {
+  adminConfirmEmailChange, adminGetAuditLog, adminGetSettings, adminRequestEmailChange, adminUpdateSettings,
+  changePassword,
+} from "@/lib/api"
+import { useStore } from "@/lib/store-context"
 import { cn, formatDate, pinActiveCurrency } from "@/lib/utils"
 import type { AdminStoreSettings } from "@/lib/types"
 
-type Tab = "store" | "audit"
-const TABS: readonly (readonly [Tab, string])[] = [["store", "Do'kon"], ["audit", "Faoliyat jurnali"]]
+type Tab = "store" | "account" | "audit"
+const TABS: readonly (readonly [Tab, string])[] = [["store", "Do'kon"], ["account", "Hisob"], ["audit", "Faoliyat jurnali"]]
+
+const alertClass = "rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+const successClass = "rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
 
 type FormState = Omit<AdminStoreSettings, "updated_at">
 type FieldName = keyof FormState
@@ -29,6 +36,7 @@ const ACTION_LABELS: Record<string, string> = {
   "customer.block": "Mijoz bloklandi", "customer.unblock": "Mijoz blokdan chiqarildi",
   "settings.update": "Sozlamalar o'zgartirildi", "message.delete": "Murojaat o'chirildi",
   "subscriber.delete": "Obunachi o'chirildi", "subscribers.export": "Obunachilar eksport qilindi",
+  "account.password": "Admin paroli almashtirildi", "account.email": "Admin emaili almashtirildi",
 }
 
 function StoreForm({ initial, onSaved }: { initial: AdminStoreSettings; onSaved: () => void }) {
@@ -113,7 +121,7 @@ function StoreForm({ initial, onSaved }: { initial: AdminStoreSettings; onSaved:
         </p>
       </Panel>
 
-      {error && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{error}</p>}
+      {error && <p role="alert" className={alertClass}>{error}</p>}
 
       <div className="flex flex-wrap items-center gap-4">
         <button type="submit" className={buttonClass.primary} disabled={saving}>
@@ -138,6 +146,185 @@ function StoreSettingsTab() {
       {/* remount with fresh values only when the server copy changes */}
       {data && <StoreForm key={data.updated_at} initial={data} onSaved={() => undefined} />}
     </>
+  )
+}
+
+// ─── Hisob: the signed-in admin's own login email and password ───
+
+function EmailForm() {
+  const { user, refreshUser } = useStore()
+  const [step, setStep] = useState<"form" | "code">("form")
+  const [newEmail, setNewEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [sentTo, setSentTo] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const [done, setDone] = useState("")
+
+  async function requestCode(event: React.FormEvent) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setError("")
+    setDone("")
+    const res = await adminRequestEmailChange(newEmail.trim(), password)
+    setBusy(false)
+    if (!res.ok) { setError(res.error); return }
+    setPassword("") // not needed again: the code proves the rest
+    setSentTo(res.data.email)
+    setStep("code")
+  }
+
+  async function confirm(event: React.FormEvent) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setError("")
+    const res = await adminConfirmEmailChange(code.trim())
+    setBusy(false)
+    if (!res.ok) { setError(res.error); return }
+    setDone(`Email yangilandi: ${res.data.email}. Keyingi safar shu manzil bilan kirasiz.`)
+    setStep("form")
+    setNewEmail("")
+    setCode("")
+    void refreshUser() // the sidebar shows the address too
+  }
+
+  function startOver() {
+    setStep("form")
+    setCode("")
+    setError("")
+  }
+
+  return (
+    <Panel>
+      <PanelHeader title="Kirish emaili" />
+      <div className="space-y-4 p-5">
+        <p className="text-sm text-muted-foreground">
+          Hozirgi email: <span className="break-all font-medium text-foreground">{user?.email || "—"}</span>
+        </p>
+        {step === "form" ? (
+          <form onSubmit={requestCode} className="space-y-4" noValidate>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Yangi email" hint="Tasdiqlash kodi shu manzilga yuboriladi.">
+                {(props) => (
+                  <input {...props} type="email" inputMode="email" autoComplete="email" required value={newEmail}
+                    onChange={(event) => setNewEmail(event.target.value)} className={inputClass} />
+                )}
+              </Field>
+              <Field label="Joriy parol">
+                {(props) => (
+                  <input {...props} type="password" autoComplete="current-password" required value={password}
+                    onChange={(event) => setPassword(event.target.value)} className={inputClass} />
+                )}
+              </Field>
+            </div>
+            {error && <p role="alert" className={alertClass}>{error}</p>}
+            {done && <p role="status" className={successClass}>{done}</p>}
+            <button type="submit" className={buttonClass.primary} disabled={busy || !newEmail.trim() || !password}>
+              {busy ? <Spinner label="Yuborilmoqda" /> : <Mail className="h-4 w-4" aria-hidden="true" />}
+              Kod yuborish
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={confirm} className="space-y-4" noValidate>
+            <div className="max-w-xs">
+              <Field label="Tasdiqlash kodi" hint={`${sentTo} manziliga 6 xonali kod yuborildi. Kod 5 daqiqa amal qiladi.`}>
+                {(props) => (
+                  <input {...props} type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} required
+                    value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} className={inputClass} />
+                )}
+              </Field>
+            </div>
+            {error && <p role="alert" className={alertClass}>{error}</p>}
+            <div className="flex flex-wrap gap-3">
+              <button type="submit" className={buttonClass.primary} disabled={busy || code.length !== 6}>
+                {busy ? <Spinner label="Tekshirilmoqda" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+                Tasdiqlash
+              </button>
+              <button type="button" className={buttonClass.ghost} onClick={startOver} disabled={busy}>
+                Boshqa email kiritish
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+      <p className="flex items-start gap-2 border-t border-border px-5 py-3 text-xs text-muted-foreground">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        Admin panelga kirish kodi shu emailga keladi. Yangi manzil kod bilan tasdiqlanmaguncha eski email o&apos;z kuchida qoladi.
+      </p>
+    </Panel>
+  )
+}
+
+function PasswordForm() {
+  const [oldPassword, setOldPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const [done, setDone] = useState(false)
+
+  const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (busy || mismatch) return
+    setBusy(true)
+    setError("")
+    setDone(false)
+    const res = await changePassword(oldPassword, newPassword, confirmPassword)
+    setBusy(false)
+    if (!res.ok) { setError(res.error); return }
+    setOldPassword("")
+    setNewPassword("")
+    setConfirmPassword("")
+    setDone(true)
+  }
+
+  return (
+    <Panel>
+      <PanelHeader title="Parol" />
+      <form onSubmit={submit} className="space-y-4 p-5" noValidate>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Joriy parol">
+            {(props) => (
+              <input {...props} type="password" autoComplete="current-password" required value={oldPassword}
+                onChange={(event) => setOldPassword(event.target.value)} className={inputClass} />
+            )}
+          </Field>
+          <Field label="Yangi parol" hint="Kamida 8 belgi; faqat raqamlardan yoki juda oddiy bo'lmasin.">
+            {(props) => (
+              <input {...props} type="password" autoComplete="new-password" required minLength={8} value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)} className={inputClass} />
+            )}
+          </Field>
+          <Field label="Yangi parolni takrorlang" error={mismatch ? "Parollar mos kelmadi" : undefined}>
+            {(props) => (
+              <input {...props} type="password" autoComplete="new-password" required minLength={8} value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)} className={inputClass} />
+            )}
+          </Field>
+        </div>
+        {error && <p role="alert" className={alertClass}>{error}</p>}
+        {done && <p role="status" className={successClass}>Parol almashtirildi. Boshqa qurilmalardagi sessiyalar yopildi.</p>}
+        <button type="submit" className={buttonClass.primary}
+          disabled={busy || mismatch || !oldPassword || newPassword.length < 8 || !confirmPassword}>
+          {busy ? <Spinner label="Saqlanmoqda" /> : <KeyRound className="h-4 w-4" aria-hidden="true" />}
+          Parolni almashtirish
+        </button>
+      </form>
+    </Panel>
+  )
+}
+
+function AccountTab() {
+  return (
+    <div className="space-y-6">
+      <EmailForm />
+      <PasswordForm />
+    </div>
   )
 }
 
@@ -192,9 +379,11 @@ export default function AdminSettingsPage() {
   const [tab, setTab] = useState<Tab>("store")
   return (
     <div className="space-y-6">
-      <PageHeader title="Sozlamalar" description="Do'kon ma'lumotlari, to'lov rekvizitlari va admin faoliyati" />
+      <PageHeader title="Sozlamalar" description="Do'kon ma'lumotlari, to'lov rekvizitlari, admin hisobi va faoliyati" />
       <FilterTabs options={TABS} value={tab} onChange={setTab} label="Bo'lim" />
-      {tab === "store" ? <StoreSettingsTab /> : <AuditTab />}
+      {tab === "store" && <StoreSettingsTab />}
+      {tab === "account" && <AccountTab />}
+      {tab === "audit" && <AuditTab />}
     </div>
   )
 }

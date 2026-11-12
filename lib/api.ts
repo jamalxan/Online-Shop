@@ -140,6 +140,7 @@ const FIELD_LABELS: Record<string, string> = {
   old_password: 'Eski parol',
   new_password: 'Yangi parol',
   confirm_password: 'Parolni tasdiqlash',
+  new_email: 'Yangi email',
   username: 'Username',
   first_name: 'Ism',
   last_name: 'Familiya',
@@ -1071,6 +1072,16 @@ export async function adminUpdateSettings(
   data: Partial<Omit<AdminStoreSettings, 'updated_at'>>,
 ): Promise<ApiResult<AdminStoreSettings>> {
   return request<AdminStoreSettings>('/api/admin/settings/', { method: 'PATCH', body: data })
+}
+
+/** Step 1 of changing the signed-in admin's email: checks the current password, mails a code to the NEW address. */
+export async function adminRequestEmailChange(new_email: string, password: string): Promise<ApiResult<{ email: string }>> {
+  return request('/api/admin/auth/account/email/', { method: 'POST', body: { new_email, password } })
+}
+
+/** Step 2: the code from the new address. Until this succeeds the login email stays as it was. */
+export async function adminConfirmEmailChange(code: string): Promise<ApiResult<{ email: string }>> {
+  return request('/api/admin/auth/account/email/confirm/', { method: 'POST', body: { code } })
 }
 
 export async function adminGetAuditLog(params: ListParams = {}): Promise<ApiResult<Paged<AdminAuditEntry>>> {

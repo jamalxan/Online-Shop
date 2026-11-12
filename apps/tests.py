@@ -1566,3 +1566,100 @@ class NotificationTests(BaseTestCase):
                 res = self.client.post('/api/orders/', self.order_payload(product_id=self.product.pk))
         self.assertEqual(res.status_code, 201)
         self.assertEqual(Order.objects.count(), 1)
+
+
+# ─── Admin o'z hisobi (parol va email) ───────────────────
+
+class AdminAccountTests(BaseTestCase):
+    NEW_PASSWORD = 'Yangi-Parol!77'
+
+    def admin_session(self):
+        """Haqiqiy admin kirishi (parol + kod): access token `adm` belgisini olib yuradi."""
+        res = self.client.post('/api/admin/auth/login/', {'email': 'admin@example.com', 'password': PASSWORD})
+        res = self.client.post('/api/admin/auth/verify/', {'challenge': res.data['challenge'], 'code': last_code()})
+        self.assertEqual(res.status_code, 200, res.data)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        mail.outbox.clear()
+
+    def change_email(self, new_email, password=PASSWORD):
+        return self.client.post('/api/admin/auth/account/email/', {'new_email': new_email, 'password': password})
+
+    def test_password_change_keeps_admin_session_limits(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        self.admin_session()
+        res = self.client.post('/api/profile/change-password/', {
+            'old_password': PASSWORD, 'new_password': self.NEW_PASSWORD, 'confirm_password': self.NEW_PASSWORD,
+        })
+        self.assertEqual(res.status_code, 200, res.data)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.check_password(self.NEW_PASSWORD))
+        self.assertTrue(AdminAuditLog.objects.filter(action='account.password', actor=self.admin).exists())
+
+        # Yangi sessiya ham admin sessiyasi: mutlaq muddat amal qilishda davom etadi
+        refresh = RefreshToken(self.refresh_cookie())
+        self.assertTrue(refresh.get('adm'))
+        self.assertTrue(refresh.get('sess'))
+        with override_settings(ADMIN_SESSION_HOURS=0):
+            self.assertEqual(self.refresh().status_code, 401)
+
+    def test_customer_password_change_is_not_marked_as_admin_session(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        res = self.client.post('/api/token/', {'email': 'ali@example.com', 'password': PASSWORD})
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        res = self.client.post('/api/profile/change-password/', {
+            'old_password': PASSWORD, 'new_password': self.NEW_PASSWORD, 'confirm_password': self.NEW_PASSWORD,
+        })
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertFalse(RefreshToken(self.refresh_cookie()).get('adm'))
+        self.assertFalse(AdminAuditLog.objects.filter(action='account.password').exists())
+
+    def test_email_change_needs_password_and_code_from_new_address(self):
+        self.admin_session()
+
+        wrong_password = self.change_email('boss@example.com', password='xato-parol')
+        self.assertEqual(wrong_password.status_code, 400)
+        taken = self.change_email('ali@example.com')
+        self.assertEqual(taken.status_code, 400)
+        same = self.change_email('ADMIN@example.com')
+        self.assertEqual(same.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)
+
+        res = self.change_email(' Boss@Example.com ')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['email'], 'b***@example.com')
+        self.assertEqual(mail.outbox[-1].to, ['boss@example.com'])  # kod eski emas, YANGI manzilga boradi
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.email, 'admin@example.com')    # tasdiqlanmaguncha o'zgarmaydi
+
+        code = last_code()
+        bad = self.client.post('/api/admin/auth/account/email/confirm/', {'code': '000000' if code != '000000' else '111111'})
+        self.assertEqual(bad.status_code, 400)
+        ok = self.client.post('/api/admin/auth/account/email/confirm/', {'code': code})
+        self.assertEqual(ok.status_code, 200, ok.data)
+        self.assertEqual(ok.data['email'], 'boss@example.com')
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.email, 'boss@example.com')
+        self.assertTrue(AdminAuditLog.objects.filter(action='account.email', actor=self.admin).exists())
+
+        # Kod bir martalik: qayta ishlatib bo'lmaydi
+        again = self.client.post('/api/admin/auth/account/email/confirm/', {'code': code})
+        self.assertEqual(again.status_code, 400)
+
+        # Kirish endi yangi email bilan ishlaydi, kod ham o'sha manzilga keladi
+        self.client.credentials()
+        cache.clear()
+        mail.outbox.clear()
+        res = self.client.post('/api/admin/auth/login/', {'email': 'boss@example.com', 'password': PASSWORD})
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(mail.outbox[-1].to, ['boss@example.com'])
+
+    def test_email_change_is_admin_only(self):
+        self.assertEqual(self.change_email('x@example.com').status_code, 401)
+        self.assertEqual(self.client.post('/api/admin/auth/account/email/confirm/', {'code': '123456'}).status_code, 401)
+        self.login(self.user)
+        self.assertEqual(self.change_email('x@example.com').status_code, 403)
+        self.assertEqual(self.client.post('/api/admin/auth/account/email/confirm/', {'code': '123456'}).status_code, 403)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'ali@example.com')

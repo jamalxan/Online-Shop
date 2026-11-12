@@ -17,9 +17,11 @@ import time
 
 from django.contrib.auth import authenticate, get_user_model
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -34,7 +36,9 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 OTP_ADMIN = 'admin_login'
+OTP_EMAIL_CHANGE = 'admin_email_change'
 CHALLENGE_TTL = 10 * 60
+EMAIL_CHANGE_TTL = 10 * 60
 MAX_FAILED_LOGINS = 5
 LOCKOUT_TTL = 10 * 60
 
@@ -188,3 +192,87 @@ class AdminResendOtpView(APIView):
         if not send_email(user.email, code, subject="APEX Admin — kirish kodi"):
             return Response({'error': "Email yuborib bo'lmadi"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({'message': "Yangi kod yuborildi"})
+
+
+# ─── Admin o'z hisobini boshqaradi: emailni almashtirish ──
+# Parol /api/profile/change-password/ orqali almashadi (admin sessiyasi belgisi saqlanadi).
+# Email — kirish kodi keladigan manzil, shuning uchun ikki bosqichda almashadi: avval joriy
+# parol so'raladi, so'ng kod YANGI manzilga yuboriladi. Xato yozilgan yoki begona manzilga
+# o'tib, admin paneldan butunlay uzilib qolishning oldi shu bilan olinadi.
+
+def _email_change_key(user_id) -> str:
+    return f"admin_email_change:{user_id}"
+
+
+@extend_schema(tags=['Admin Auth'])
+class AdminEmailChangeView(APIView):
+    permission_classes = (IsAdminUser,)
+    throttle_scope = 'otp_send'
+
+    def post(self, request):
+        user = request.user
+        new_email = str(request.data.get('new_email') or '').strip().lower()
+        password = str(request.data.get('password') or '')
+        if not new_email or not password:
+            return Response({'error': "Yangi email va joriy parol kiritish shart"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_email(new_email)
+        except DjangoValidationError:
+            return Response({'error': "Email manzili noto'g'ri"}, status=status.HTTP_400_BAD_REQUEST)
+        if not user.check_password(password):
+            return Response({'error': "Joriy parol noto'g'ri"}, status=status.HTTP_400_BAD_REQUEST)
+        if new_email == (user.email or '').lower():
+            return Response({'error': "Bu sizning hozirgi emailingiz"}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(email__iexact=new_email).exclude(pk=user.pk).exists():
+            return Response({'error': "Bu email boshqa hisobga biriktirilgan"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            code = otp.issue(OTP_EMAIL_CHANGE, f"{user.pk}:{new_email}")
+        except otp.OtpError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        cache.set(_email_change_key(user.pk), new_email, EMAIL_CHANGE_TTL)
+
+        if not send_email(new_email, code, subject="APEX Admin — yangi emailni tasdiqlash"):
+            return Response(
+                {'error': "Email yuborib bo'lmadi. Server sozlamalarini tekshiring."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({'message': "Tasdiqlash kodi yangi emailga yuborildi", 'email': _mask_email(new_email)})
+
+
+@extend_schema(tags=['Admin Auth'])
+class AdminEmailChangeConfirmView(APIView):
+    permission_classes = (IsAdminUser,)
+    throttle_scope = 'otp_verify'
+
+    def post(self, request):
+        user = request.user
+        code = str(request.data.get('code') or '').strip()
+        if not code:
+            return Response({'error': "Kod kiritish shart"}, status=status.HTTP_400_BAD_REQUEST)
+        new_email = cache.get(_email_change_key(user.pk))
+        if not new_email:
+            return Response(
+                {'error': "So'rov muddati tugagan. Qaytadan boshlang."}, status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            otp.verify(OTP_EMAIL_CHANGE, f"{user.pk}:{new_email}", code)
+        except otp.OtpError as exc:
+            if exc.status == 429:
+                cache.delete(_email_change_key(user.pk))
+            return Response({'error': exc.message}, status=exc.status)
+
+        cache.delete(_email_change_key(user.pk))
+        # Kod kutilayotgan paytda manzilni boshqa hisob egallab olgan bo'lishi mumkin
+        if User.objects.filter(email__iexact=new_email).exclude(pk=user.pk).exists():
+            return Response({'error': "Bu email boshqa hisobga biriktirilgan"}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_email = user.email or ''
+        user.email = new_email
+        user.save(update_fields=['email'])
+        logger.info("Admin emaili almashtirildi: user_id=%s", user.pk)
+        AdminAuditLog.objects.create(
+            actor=user, actor_email=new_email, action='account.email',
+            summary=f"{_mask_email(old_email)} -> {_mask_email(new_email)}", ip=client_ip(request) or None,
+        )
+        return Response({'message': "Email yangilandi", 'email': new_email})
