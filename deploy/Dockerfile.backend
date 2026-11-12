@@ -1,0 +1,29 @@
+# Django API (gunicorn). Build context: repository root.
+FROM python:3.13-slim
+
+LABEL app=apexstore
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt "gunicorn>=23,<24"
+
+COPY manage.py ./
+COPY OnlineShop ./OnlineShop
+COPY apps ./apps
+
+# uid 1000 matches the deploy user on the host, so the bind-mounted
+# Media/, private_media/ and staticfiles/ stay writable.
+RUN useradd --uid 1000 --create-home app \
+    && mkdir -p Media private_media staticfiles \
+    && chown -R app:app /app
+USER app
+
+EXPOSE 8000
+
+# Migrations and collectstatic run on every start: a deploy is "build, then restart".
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && exec gunicorn OnlineShop.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60 --access-logfile -"]

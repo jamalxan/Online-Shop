@@ -1,0 +1,76 @@
+name: CI/CD
+
+# Every push and pull request is tested. A push to master that passes is deployed.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    env:
+      # SQLite + in-memory cache: DB_NAME and REDIS_HOST stay unset
+      SECRET_KEY: ci-only-not-a-real-secret
+      DEBUG: "True"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py check
+      - name: No model changes without a migration
+        run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test apps
+
+  frontend:
+    name: Frontend typecheck and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx eslint app components lib
+
+  deploy:
+    name: Deploy to server
+    needs: [backend, frontend]
+    # Off until the server trusts the CI key and the DEPLOY_* secrets exist:
+    # then set the repository variable DEPLOY_ENABLED=true (Settings -> Secrets and variables -> Actions).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Run the deploy script over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key is pinned on the server to deploy/deploy.sh (authorized_keys command=),
+          # so no command is passed here and none could be.
+          ssh -i ~/.ssh/deploy_key \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=30 -o ConnectionAttempts=4 -o ServerAliveInterval=30 \
+              "$DEPLOY_USER@$DEPLOY_HOST"
