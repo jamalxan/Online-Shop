@@ -1,10 +1,12 @@
 name: CI/CD
 
 # Every push and pull request is tested. A push to master that passes is deployed.
+# "Run workflow" on master (Actions tab) redeploys by hand.
 on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,9 +51,9 @@ jobs:
   deploy:
     name: Deploy to server
     needs: [backend, frontend]
-    # Off until the server trusts the CI key and the DEPLOY_* secrets exist:
-    # then set the repository variable DEPLOY_ENABLED=true (Settings -> Secrets and variables -> Actions).
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true'
+    # Kill switch: set the repository variable DEPLOY_ENABLED to anything but "true"
+    # (Settings -> Secrets and variables -> Actions) and pushes are tested but not deployed.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-production
