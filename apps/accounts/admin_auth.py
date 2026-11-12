@@ -1,263 +1,190 @@
 """
-Admin panel uchun maxsus login + email OTP tasdiqlash.
+Admin panel uchun ikki bosqichli kirish: parol + emailga yuborilgan bir martalik kod.
 Faqat is_staff=True yoki is_superuser=True foydalanuvchilar kira oladi.
+
+Oqim:
+  1. POST login/   {email, password}      -> {challenge, email (niqoblangan)}
+  2. POST verify/  {challenge, code}      -> {access, refresh, user}
+     POST resend/  {challenge}            -> yangi kod (pauza va limit bilan)
+
+`challenge` — parol to'g'ri kiritilgandan keyingina beriladigan tasodifiy token.
+Kodni tekshirish va qayta yuborish faqat shu token bilan ishlaydi, shuning uchun
+parolni bilmagan odam kod so'rata olmaydi va kodni saralab topa olmaydi.
 """
-import random
-import string
-from datetime import timedelta
+import logging
+import secrets
+import time
 
 from django.contrib.auth import authenticate, get_user_model
 from django.core.cache import cache
-from django.core.mail import send_mail
-from django.conf import settings
-from django.utils import timezone
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps import otp
+from apps.auth_cookies import enforce_trusted_origin, token_response
+from apps.models import AdminAuditLog
+from apps.send_message import send_email
+from apps.utils import client_ip
+
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+OTP_ADMIN = 'admin_login'
+CHALLENGE_TTL = 10 * 60
+MAX_FAILED_LOGINS = 5
+LOCKOUT_TTL = 10 * 60
 
-ADMIN_OTP_TTL     = 300   # 5 daqiqa
-ADMIN_OTP_PREFIX  = "admin_otp:"
-MAX_ATTEMPTS      = 5
-LOCKOUT_TTL       = 600   # 10 daqiqa
-
-
-def _otp_key(username: str) -> str:
-    return f"{ADMIN_OTP_PREFIX}{username}"
+INVALID_CREDENTIALS = "Login yoki parol noto'g'ri"
 
 
-def _lock_key(username: str) -> str:
-    return f"admin_lock:{username}"
+def _challenge_key(challenge: str) -> str:
+    return f"admin_challenge:{challenge}"
 
 
-def _attempt_key(username: str) -> str:
-    return f"admin_attempts:{username}"
+def _fail_key(request, identifier: str) -> str:
+    # IP + login bo'yicha: hujumchi boshqa odamning adminini bloklab qo'ya olmaydi
+    ip = request.META.get('REMOTE_ADDR', '')
+    return "admin_fail:" + otp._key('x', ip, identifier)
 
 
-def generate_otp(length: int = 6) -> str:
-    return "".join(random.choices(string.digits, k=length))
+def _mask_email(email: str) -> str:
+    local, _, domain = (email or '').partition('@')
+    return f"{local[:1]}***@{domain}" if domain else "***"
 
 
-def send_admin_otp(email: str, otp: str, username: str) -> bool:
-    """OTP kodni email ga jo'natadi."""
-    subject = "🔐 APEX Admin — Kirish kodi"
-    message = (
-        f"Salom, {username}!\n\n"
-        f"APEX Admin panelga kirish uchun tasdiqlash kodingiz:\n\n"
-        f"  ╔══════════════╗\n"
-        f"  ║   {otp}   ║\n"
-        f"  ╚══════════════╝\n\n"
-        f"Bu kod 5 daqiqa davomida amal qiladi.\n"
-        f"Agar siz kirmagan bo'lsangiz, bu xatni e'tiborsiz qoldiring.\n\n"
-        f"— APEX Security Team"
-    )
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-        return True
-    except Exception as e:
-        print(f"[AdminAuth] Email yuborishda xatolik: {e}")
-        return False
+def _find_user(identifier: str):
+    """Email yoki username bo'yicha."""
+    identifier = identifier.strip()
+    if '@' in identifier:
+        return User.objects.filter(email__iexact=identifier).first()
+    return User.objects.filter(username__iexact=identifier).first()
 
 
-# ─── Step 1: Login (credentials) ────────────────────────────────────────────
-
+@extend_schema(tags=['Admin Auth'])
 class AdminLoginView(APIView):
-    """
-    POST /api/admin/auth/login/
-    Body: { "username": "admin", "password": "admin1234" }
-    
-    1. Username/password tekshiradi
-    2. is_staff yoki is_superuser ekanligini tekshiradi
-    3. OTP generatsiya qiladi va email ga jo'natadi
-    4. { "message": "...", "email": "j***@gmail.com" } qaytaradi
-    """
-    permission_classes = []
-    authentication_classes = []
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    throttle_scope = 'login'
 
     def post(self, request):
-        username = request.data.get("username", "").strip()
-        password = request.data.get("password", "")
+        identifier = str(request.data.get('email') or request.data.get('username') or '').strip()
+        password = str(request.data.get('password') or '')
+        if not identifier or not password:
+            return Response({'error': "Login va parol kiritish shart"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not username or not password:
+        fail_key = _fail_key(request, identifier)
+        if (cache.get(fail_key) or 0) >= MAX_FAILED_LOGINS:
             return Response(
-                {"error": "Username va parol kiritish shart"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Lockout tekshirish
-        if cache.get(_lock_key(username)):
-            return Response(
-                {"error": "Juda ko'p urinish. 10 daqiqadan keyin qayta urining."},
+                {'error': "Juda ko'p noto'g'ri urinish. 10 daqiqadan keyin qayta urinib ko'ring."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        # Autentifikatsiya
-        user = authenticate(request, username=username, password=password)
-        if user is None:
-            # Attempt counter
-            attempts = cache.get(_attempt_key(username), 0) + 1
-            cache.set(_attempt_key(username), attempts, LOCKOUT_TTL)
-            if attempts >= MAX_ATTEMPTS:
-                cache.set(_lock_key(username), True, LOCKOUT_TTL)
-                cache.delete(_attempt_key(username))
-                return Response(
-                    {"error": "Juda ko'p noto'g'ri urinish. 10 daqiqaga bloklandi."},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
+        candidate = _find_user(identifier)
+        user = authenticate(request, username=candidate.email, password=password) if candidate else None
+
+        # Admin emasligi ham xuddi shu javob bilan qaytadi — hisob turini oshkor qilmaslik uchun
+        if user is None or not (user.is_staff or user.is_superuser):
+            otp._incr(fail_key, LOCKOUT_TTL)
+            return Response({'error': INVALID_CREDENTIALS}, status=status.HTTP_401_UNAUTHORIZED)
+
+        cache.delete(fail_key)
+        challenge = secrets.token_urlsafe(32)
+        try:
+            # Yuborish limiti foydalanuvchi bo'yicha (har login yangi challenge bo'lgani uchun)
+            otp.check_can_send(OTP_ADMIN, f"user:{user.pk}")
+        except otp.OtpError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        code = otp.issue(OTP_ADMIN, challenge, enforce_limits=False)
+        cache.set(_challenge_key(challenge), user.pk, CHALLENGE_TTL)
+
+        if not send_email(user.email, code, subject="APEX Admin — kirish kodi"):
             return Response(
-                {"error": "Username yoki parol noto'g'ri"},
-                status=status.HTTP_401_UNAUTHORIZED,
+                {'error': "Email yuborib bo'lmadi. Server sozlamalarini tekshiring."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-
-        # Admin huquqi tekshirish
-        if not (user.is_staff or user.is_superuser):
-            return Response(
-                {"error": "Sizda admin huquqi yo'q"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        if not user.is_active:
-            return Response(
-                {"error": "Hisob faol emas"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        # OTP generatsiya
-        otp = generate_otp()
-        cache.set(_otp_key(username), {
-            "otp": otp,
-            "user_id": user.id,
-            "created_at": timezone.now().isoformat(),
-        }, ADMIN_OTP_TTL)
-        cache.delete(_attempt_key(username))
-
-        # Email jo'natish
-        sent = send_admin_otp(user.email, otp, username)
-        if not sent:
-            return Response(
-                {"error": "Email jo'natishda xatolik. Server sozlamalarini tekshiring."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        # Email ni qisman yashirish  j***@gmail.com
-        email_parts = user.email.split("@")
-        masked_email = email_parts[0][:1] + "***@" + email_parts[1] if len(email_parts) == 2 else "***"
-
         return Response({
-            "message": f"Tasdiqlash kodi emailga yuborildi",
-            "email": masked_email,
-            "username": username,
+            'message': "Tasdiqlash kodi emailga yuborildi",
+            'email': _mask_email(user.email),
+            'challenge': challenge,
         })
 
 
-# ─── Step 2: Verify OTP ───────────────────────────────────────────────────────
-
+@extend_schema(tags=['Admin Auth'])
 class AdminVerifyOtpView(APIView):
-    """
-    POST /api/admin/auth/verify/
-    Body: { "username": "admin", "code": "123456" }
-
-    1. OTP ni tekshiradi
-    2. To'g'ri bo'lsa JWT access/refresh token qaytaradi
-    """
-    permission_classes = []
-    authentication_classes = []
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    throttle_scope = 'otp_verify'
 
     def post(self, request):
-        username = request.data.get("username", "").strip()
-        code     = request.data.get("code", "").strip()
+        enforce_trusted_origin(request)  # javob sessiya cookie'sini o'rnatadi
+        challenge = str(request.data.get('challenge') or '').strip()
+        code = str(request.data.get('code') or '').strip()
+        if not challenge or not code:
+            return Response({'error': "Kod kiritish shart"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not username or not code:
+        user_id = cache.get(_challenge_key(challenge))
+        if not user_id:
             return Response(
-                {"error": "Username va kod kiritish shart"},
-                status=status.HTTP_400_BAD_REQUEST,
+                {'error': "Sessiya muddati tugagan. Qaytadan kiring."}, status=status.HTTP_400_BAD_REQUEST,
             )
-
-        cached = cache.get(_otp_key(username))
-        if not cached:
-            return Response(
-                {"error": "Kod muddati tugagan yoki topilmadi. Qayta kiring."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if cached["otp"] != code:
-            return Response(
-                {"error": "Kod noto'g'ri"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # OTP to'g'ri — o'chirib yuboramiz (bir martalik)
-        cache.delete(_otp_key(username))
-
         try:
-            user = User.objects.get(id=cached["user_id"])
-        except User.DoesNotExist:
-            return Response(
-                {"error": "Foydalanuvchi topilmadi"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            otp.verify(OTP_ADMIN, challenge, code)
+        except otp.OtpError as exc:
+            if exc.status == 429:
+                cache.delete(_challenge_key(challenge))
+            return Response({'error': exc.message}, status=exc.status)
 
-        # JWT token generatsiya
+        cache.delete(_challenge_key(challenge))
+        user = User.objects.filter(pk=user_id, is_active=True).first()
+        if not user or not (user.is_staff or user.is_superuser):
+            return Response({'error': INVALID_CREDENTIALS}, status=status.HTTP_401_UNAUTHORIZED)
+
         refresh = RefreshToken.for_user(user)
-        access  = refresh.access_token
-
-        return Response({
-            "access":  str(access),
-            "refresh": str(refresh),
-            "user": {
-                "id":         user.id,
-                "username":   user.username,
-                "email":      user.email,
-                "first_name": user.first_name,
-                "is_staff":   user.is_staff,
-                "is_superuser": user.is_superuser,
-            }
+        # Admin sessiyasi belgisi: /api/auth/refresh/ shu belgiga qarab mutlaq muddatni tekshiradi
+        refresh['adm'] = True
+        refresh['sess'] = int(time.time())
+        logger.info("Admin kirdi: user_id=%s", user.pk)
+        AdminAuditLog.objects.create(
+            actor=user, actor_email=user.email or '', action='auth.login',
+            summary='Parol + email kod', ip=client_ip(request) or None,
+        )
+        return token_response(refresh, {
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+            },
         })
 
 
-# ─── Resend OTP ───────────────────────────────────────────────────────────────
-
+@extend_schema(tags=['Admin Auth'])
 class AdminResendOtpView(APIView):
-    """
-    POST /api/admin/auth/resend/
-    Body: { "username": "admin" }
-    """
-    permission_classes = []
-    authentication_classes = []
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    throttle_scope = 'otp_send'
 
     def post(self, request):
-        username = request.data.get("username", "").strip()
-        if not username:
-            return Response({"error": "Username kiritish shart"}, status=400)
-
+        challenge = str(request.data.get('challenge') or '').strip()
+        user_id = cache.get(_challenge_key(challenge)) if challenge else None
+        if not user_id:
+            return Response(
+                {'error': "Sessiya muddati tugagan. Qaytadan kiring."}, status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = User.objects.filter(pk=user_id, is_active=True).first()
+        if not user:
+            return Response({'error': INVALID_CREDENTIALS}, status=status.HTTP_401_UNAUTHORIZED)
         try:
-            user = User.objects.get(username=username, is_active=True)
-        except User.DoesNotExist:
-            return Response({"error": "Foydalanuvchi topilmadi"}, status=404)
-
-        if not (user.is_staff or user.is_superuser):
-            return Response({"error": "Ruxsat yo'q"}, status=403)
-
-        otp = generate_otp()
-        cache.set(_otp_key(username), {
-            "otp": otp,
-            "user_id": user.id,
-            "created_at": timezone.now().isoformat(),
-        }, ADMIN_OTP_TTL)
-
-        sent = send_admin_otp(user.email, otp, username)
-        if not sent:
-            return Response({"error": "Email jo'natishda xatolik"}, status=500)
-
-        return Response({"message": "Yangi kod yuborildi"})
+            otp.check_can_send(OTP_ADMIN, f"user:{user.pk}")
+        except otp.OtpError as exc:
+            return Response({'error': exc.message}, status=exc.status)
+        code = otp.issue(OTP_ADMIN, challenge, enforce_limits=False)
+        if not send_email(user.email, code, subject="APEX Admin — kirish kodi"):
+            return Response({'error': "Email yuborib bo'lmadi"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({'message': "Yangi kod yuborildi"})

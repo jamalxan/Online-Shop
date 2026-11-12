@@ -1,110 +1,79 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import Link from "next/link"
+import { ChevronLeft, ChevronRight, SearchX } from "lucide-react"
 import { ProductCard } from "@/components/product-card"
-import type { Product } from "@/lib/types"
-import type { FilterState } from "./product-filters"
+import { CATALOG_SORTS, type CatalogSort } from "@/lib/catalog"
 import { cn } from "@/lib/utils"
-import { LayoutGrid, List } from "lucide-react"
+import type { Paged, Product } from "@/lib/types"
 
 interface ProductGridProps {
-  products: Product[]
-  filters: FilterState
+  page: Paged<Product>
+  sort: CatalogSort
+  onSortChange: (sort: CatalogSort) => void
+  hrefForPage: (page: number) => string
+  /** a new page is being fetched */
+  pending: boolean
+  /** any filter or search is active (changes the empty-state wording) */
+  filtered: boolean
 }
 
-type SortOption = "default" | "price-asc" | "price-desc" | "newest" | "discount"
-
-function matchesPriceRange(price: number, range: string): boolean {
-  switch (range) {
-    case "under-500":  return price < 500
-    case "500-1000":   return price >= 500 && price <= 1000
-    case "1000-2000":  return price > 1000 && price <= 2000
-    case "over-2000":  return price > 2000
-    default:           return true
-  }
+/** 1 … 4 5 [6] 7 8 … 20 — the current page, its neighbours and both ends. */
+function pageNumbers(current: number, total: number): (number | "gap")[] {
+  const wanted = new Set([1, total, current - 1, current, current + 1])
+  const pages = [...wanted].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b)
+  const out: (number | "gap")[] = []
+  pages.forEach((n, i) => {
+    if (i > 0 && n - pages[i - 1] > 1) out.push("gap")
+    out.push(n)
+  })
+  return out
 }
 
-export function ProductGrid({ products, filters }: ProductGridProps) {
-  const [sort, setSort] = useState<SortOption>("default")
+const pageLink =
+  "flex h-10 min-w-10 items-center justify-center rounded-xl border border-border px-3 text-sm transition-colors " +
+  "hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 
-  const filtered = useMemo(() => {
-    let result = [...products]
-
-    // Filter: in stock
-    if (filters.inStock) {
-      result = result.filter(p => p.quantity > 0)
-    }
-
-    // Filter: price ranges
-    if (filters.priceRanges.length > 0) {
-      result = result.filter(p =>
-        filters.priceRanges.some(range => matchesPriceRange(p.price, range))
-      )
-    }
-
-    // Filter: storage
-    if (filters.storages.length > 0) {
-      result = result.filter(p =>
-        p.storageOptions?.some(s => filters.storages.includes(s.storage))
-      )
-    }
-
-    // Filter: colors
-    if (filters.colors.length > 0) {
-      result = result.filter(p =>
-        p.colorVariants?.some(c => filters.colors.includes(c.name))
-      )
-    }
-
-    // Sort
-    switch (sort) {
-      case "price-asc":  result.sort((a, b) => a.price - b.price); break
-      case "price-desc": result.sort((a, b) => b.price - a.price); break
-      case "discount":   result.sort((a, b) => (b.discount ?? 0) - (a.discount ?? 0)); break
-      case "newest":
-        result.sort((a, b) => {
-          if (!a.createdAt || !b.createdAt) return 0
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        })
-        break
-    }
-
-    return result
-  }, [products, filters, sort])
+export function ProductGrid({ page, sort, onSortChange, hrefForPage, pending, filtered }: ProductGridProps) {
+  const products = page.results
 
   return (
     <div className="flex-1 min-w-0">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <p className="text-sm text-muted-foreground">
-          <span className="font-semibold text-foreground">{filtered.length}</span> ta mahsulot topildi
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          <span className="font-semibold text-foreground">{page.count}</span> ta mahsulot topildi
         </p>
         <div className="flex items-center gap-3">
           <select
             value={sort}
-            onChange={e => setSort(e.target.value as SortOption)}
-            className="rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-foreground"
+            onChange={e => onSortChange(e.target.value as CatalogSort)}
+            aria-label="Saralash"
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <option value="default">Standart tartib</option>
-            <option value="price-asc">Narx: arzon — qimmat</option>
-            <option value="price-desc">Narx: qimmat — arzon</option>
-            <option value="discount">Chegirmali avval</option>
-            <option value="newest">Eng yangi</option>
+            {CATALOG_SORTS.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
           </select>
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {products.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="text-5xl mb-4">🔍</div>
+          <SearchX className="h-12 w-12 mb-4 text-muted-foreground" aria-hidden="true" />
           <h3 className="text-lg font-semibold mb-2">Mahsulot topilmadi</h3>
           <p className="text-sm text-muted-foreground max-w-xs">
-            Tanlangan filtrlarga mos mahsulot yo'q. Filtrlarni o'zgartiring.
+            {filtered
+              ? "Tanlangan filtrlarga mos mahsulot yo'q. Filtrlarni o'zgartiring."
+              : "Bu yerda hozircha mahsulot yo'q."}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((product) => (
+        <div
+          aria-busy={pending}
+          className={cn("grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4 transition-opacity", pending && "opacity-50")}
+        >
+          {products.map((product) => (
             <ProductCard
               key={product.id}
               id={product.id}
@@ -115,9 +84,46 @@ export function ProductGrid({ products, filters }: ProductGridProps) {
               image={product.image}
               badge={product.badge}
               quantity={product.quantity}
+              sizes="(max-width: 768px) 50vw, (max-width: 1280px) 33vw, 20vw"
             />
           ))}
         </div>
+      )}
+
+      {page.pages > 1 && (
+        <nav aria-label="Sahifalar" className="mt-10 flex flex-wrap items-center justify-center gap-2">
+          {page.page > 1 ? (
+            <Link href={hrefForPage(page.page - 1)} rel="prev" aria-label="Oldingi sahifa" className={pageLink}>
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          ) : (
+            <span aria-hidden="true" className={cn(pageLink, "pointer-events-none opacity-40")}>
+              <ChevronLeft className="h-4 w-4" />
+            </span>
+          )}
+          {pageNumbers(page.page, page.pages).map((item, index) =>
+            item === "gap" ? (
+              <span key={`gap-${index}`} aria-hidden="true" className="px-1 text-muted-foreground">…</span>
+            ) : item === page.page ? (
+              <span key={item} aria-current="page" className={cn(pageLink, "border-foreground bg-foreground text-background hover:bg-foreground")}>
+                {item}
+              </span>
+            ) : (
+              <Link key={item} href={hrefForPage(item)} aria-label={`${item}-sahifa`} className={pageLink}>
+                {item}
+              </Link>
+            ),
+          )}
+          {page.page < page.pages ? (
+            <Link href={hrefForPage(page.page + 1)} rel="next" aria-label="Keyingi sahifa" className={pageLink}>
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          ) : (
+            <span aria-hidden="true" className={cn(pageLink, "pointer-events-none opacity-40")}>
+              <ChevronRight className="h-4 w-4" />
+            </span>
+          )}
+        </nav>
       )}
     </div>
   )

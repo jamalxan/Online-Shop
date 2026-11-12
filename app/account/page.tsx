@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { Button } from "@/components/ui/button"
@@ -10,7 +11,7 @@ import {
   User,
   Package,
   Heart,
-  Settings,
+  ShieldCheck,
   LogOut,
   ChevronRight,
   Eye,
@@ -26,9 +27,9 @@ import {
   verifyOtp,
   register,
   login,
-  getProfile,
   updateProfile,
   changePassword,
+  safeRedirectPath,
   type UserProfile,
 } from "@/lib/api"
 import { useStore } from "@/lib/store-context"
@@ -97,17 +98,19 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         </div>
         <div>
           <label className="text-sm font-medium">Tasdiqlash kodi (6 xonali)</label>
-          <input
+          <input aria-label="Tasdiqlash kodi (6 xonali)"
             type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
             maxLength={6}
             value={otpCode}
-            onChange={(e) => setOtpCode(e.target.value)}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
             placeholder="123456"
             className="mt-2 w-full rounded-xl border border-border bg-background py-3 px-4 text-center text-lg tracking-widest outline-none focus:ring-2 focus:ring-ring"
             required
           />
         </div>
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         <Button type="submit" className="w-full rounded-xl" size="lg" disabled={loading || otpCode.length < 6}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
           Tasdiqlash va ro'yxatdan o'tish
@@ -117,7 +120,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
           onClick={() => { setStep("form"); setOtpCode(""); setError("") }}
           className="w-full text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Orqaga
+          Orqaga
         </button>
       </form>
     )
@@ -128,20 +131,20 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-sm font-medium">Ism</label>
-          <input value={form.first_name} onChange={set("first_name")}
+          <input aria-label="Ism" value={form.first_name} onChange={set("first_name")}
             placeholder="Ism" required
             className="mt-2 w-full rounded-xl border border-border bg-background py-3 px-4 outline-none focus:ring-2 focus:ring-ring" />
         </div>
         <div>
           <label className="text-sm font-medium">Familiya</label>
-          <input value={form.last_name} onChange={set("last_name")}
+          <input aria-label="Familiya" value={form.last_name} onChange={set("last_name")}
             placeholder="Familiya" required
             className="mt-2 w-full rounded-xl border border-border bg-background py-3 px-4 outline-none focus:ring-2 focus:ring-ring" />
         </div>
       </div>
       <div>
         <label className="text-sm font-medium">Username</label>
-        <input value={form.username} onChange={set("username")}
+        <input aria-label="Username" value={form.username} onChange={set("username")}
           placeholder="username" required
           className="mt-2 w-full rounded-xl border border-border bg-background py-3 px-4 outline-none focus:ring-2 focus:ring-ring" />
       </div>
@@ -149,7 +152,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         <label className="text-sm font-medium">Email</label>
         <div className="relative mt-2">
           <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <input type="email" value={form.email} onChange={set("email")}
+          <input aria-label="Email" type="email" autoComplete="email" value={form.email} onChange={set("email")}
             placeholder="email@example.com" required
             className="w-full rounded-xl border border-border bg-background py-3 pl-12 pr-4 outline-none focus:ring-2 focus:ring-ring" />
         </div>
@@ -158,7 +161,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         <label className="text-sm font-medium">Telefon</label>
         <div className="relative mt-2">
           <Phone className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <input type="tel" value={form.phone_number} onChange={set("phone_number")}
+          <input aria-label="Telefon" type="tel" autoComplete="tel" value={form.phone_number} onChange={set("phone_number")}
             placeholder="+998901234567" required
             className="w-full rounded-xl border border-border bg-background py-3 pl-12 pr-4 outline-none focus:ring-2 focus:ring-ring" />
         </div>
@@ -167,16 +170,17 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         <label className="text-sm font-medium">Parol</label>
         <div className="relative mt-2">
           <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <input type={showPass ? "text" : "password"} value={form.password} onChange={set("password")}
+          <input aria-label="Parol" type={showPass ? "text" : "password"} autoComplete="new-password" value={form.password} onChange={set("password")}
             placeholder="Kamida 8 ta belgi" minLength={8} required
             className="w-full rounded-xl border border-border bg-background py-3 pl-12 pr-12 outline-none focus:ring-2 focus:ring-ring" />
           <button type="button" onClick={() => setShowPass(!showPass)}
+            aria-label={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">
             {showPass ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
           </button>
         </div>
       </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <Button type="submit" className="w-full rounded-xl" size="lg" disabled={loading}>
         {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
         Email tasdiqlash kodi yuborish
@@ -192,14 +196,21 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [adminOnly, setAdminOnly] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setError("")
+    setAdminOnly(false)
     setLoading(true)
-    const res = await login(email, password)
+    const res = await login(email.trim(), password)
     setLoading(false)
-    if (!res.ok) { setError(res.error || "Xatolik"); return }
+    if (!res.ok) {
+      setError(res.error)
+      setAdminOnly(Boolean(res.adminOnly))
+      return
+    }
     onSuccess()
   }
 
@@ -209,7 +220,7 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
         <label className="text-sm font-medium">Email</label>
         <div className="relative mt-2">
           <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+          <input aria-label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)}
             placeholder="email@example.com" required
             className="w-full rounded-xl border border-border bg-background py-3 pl-12 pr-4 outline-none focus:ring-2 focus:ring-ring" />
         </div>
@@ -218,16 +229,26 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
         <label className="text-sm font-medium">Parol</label>
         <div className="relative mt-2">
           <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-          <input type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
+          <input aria-label="Parol" type={showPass ? "text" : "password"} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
             placeholder="Parolingiz" required
             className="w-full rounded-xl border border-border bg-background py-3 pl-12 pr-12 outline-none focus:ring-2 focus:ring-ring" />
           <button type="button" onClick={() => setShowPass(!showPass)}
+            aria-label={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground">
             {showPass ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
           </button>
         </div>
       </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {error}{" "}
+          {adminOnly && (
+            <Link href="/admin/login" className="font-medium underline">
+              Admin panelga kirish
+            </Link>
+          )}
+        </p>
+      )}
       <div className="flex justify-end text-sm">
         <Link href="/forgot-password" className="text-foreground hover:underline">
           Parolni unutdingizmi?
@@ -242,7 +263,11 @@ function LoginForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 // ─── Dashboard (logged in) ────────────────────────────────
-function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void }) {
+function Dashboard({ user, onLogout, onProfileSaved }: {
+  user: UserProfile
+  onLogout: () => void
+  onProfileSaved: () => Promise<unknown>
+}) {
   const [editMode, setEditMode] = useState(false)
   const [changingPass, setChangingPass] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -253,7 +278,6 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
     first_name: user.first_name,
     last_name: user.last_name,
     username: user.username,
-    email: user.email,
   })
 
   const [passForm, setPassForm] = useState({
@@ -266,7 +290,9 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
     e.preventDefault()
     setError(""); setSuccess("")
     setLoading(true)
+    // email is read-only on the backend and is never sent
     const res = await updateProfile(profileForm)
+    if (res.ok) await onProfileSaved() // show the saved values, not the stale ones
     setLoading(false)
     if (!res.ok) { setError(res.error || "Xatolik"); return }
     setSuccess("Profil yangilandi!")
@@ -290,14 +316,14 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
 
   const menuItems = [
     { icon: Package, label: "Buyurtmalarim", href: "/account/orders" },
-    { icon: Heart, label: "Wishlist", href: "/wishlist" },
-    { icon: Settings, label: "Sozlamalar", href: "/account/settings" },
+    { icon: Heart, label: "Sevimlilar", href: "/wishlist" },
+    ...(user.is_staff ? [{ icon: ShieldCheck, label: "Admin panel", href: "/admin" }] : []),
   ]
 
   return (
     <>
       <Header />
-      <main className="min-h-screen bg-background pt-24 pb-20">
+      <main id="main-content" className="min-h-screen bg-background pt-24 pb-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-8">
             <Link href="/" className="hover:text-foreground">Bosh sahifa</Link>
@@ -311,7 +337,7 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
               <div className="rounded-2xl border border-border bg-card p-6">
                 <div className="flex items-center gap-4 pb-6 border-b border-border">
                   <div className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary text-xl font-semibold">
-                    {user.first_name.charAt(0).toUpperCase()}
+                    {(user.first_name || user.email || "?").charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <h2 className="font-semibold">{user.first_name} {user.last_name}</h2>
@@ -339,7 +365,7 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
             <div className="lg:col-span-3 space-y-8">
               {/* Alert */}
               {(error || success) && (
-                <div className={`rounded-xl p-4 text-sm ${error ? "bg-red-50 text-red-600 border border-red-200" : "bg-green-50 text-green-600 border border-green-200"}`}>
+                <div role={error ? "alert" : "status"} className={`rounded-xl p-4 text-sm ${error ? "bg-red-50 text-red-600 border border-red-200" : "bg-green-50 text-green-600 border border-green-200"}`}>
                   {error || success}
                 </div>
               )}
@@ -360,25 +386,25 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium">Ism</label>
-                        <input value={profileForm.first_name}
+                        <input aria-label="Ism" value={profileForm.first_name}
                           onChange={(e) => setProfileForm(f => ({ ...f, first_name: e.target.value }))}
                           className="mt-2 w-full rounded-xl border border-border bg-background py-2.5 px-4 outline-none focus:ring-2 focus:ring-ring" />
                       </div>
                       <div>
                         <label className="text-sm font-medium">Familiya</label>
-                        <input value={profileForm.last_name}
+                        <input aria-label="Familiya" value={profileForm.last_name}
                           onChange={(e) => setProfileForm(f => ({ ...f, last_name: e.target.value }))}
                           className="mt-2 w-full rounded-xl border border-border bg-background py-2.5 px-4 outline-none focus:ring-2 focus:ring-ring" />
                       </div>
                       <div>
                         <label className="text-sm font-medium">Username</label>
-                        <input value={profileForm.username}
+                        <input aria-label="Username" value={profileForm.username}
                           onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
                           className="mt-2 w-full rounded-xl border border-border bg-background py-2.5 px-4 outline-none focus:ring-2 focus:ring-ring" />
                       </div>
                       <div>
                         <label className="text-sm font-medium">Email (o'zgartirib bo'lmaydi)</label>
-                        <input value={profileForm.email} disabled
+                        <input aria-label="Email (o'zgartirib bo'lmaydi)" value={user.email} disabled readOnly
                           className="mt-2 w-full rounded-xl border border-border bg-secondary py-2.5 px-4 opacity-60" />
                       </div>
                     </div>
@@ -438,6 +464,8 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
                         <div className="relative mt-2">
                           <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                           <input type="password" value={passForm[key]}
+                            aria-label={key === "old_password" ? "Eski parol" : key === "new_password" ? "Yangi parol" : "Yangi parolni tasdiqlash"}
+                            autoComplete={key === "old_password" ? "current-password" : "new-password"}
                             onChange={(e) => setPassForm(f => ({ ...f, [key]: e.target.value }))}
                             minLength={8} required
                             className="w-full rounded-xl border border-border bg-background py-2.5 pl-11 pr-4 outline-none focus:ring-2 focus:ring-ring" />
@@ -469,24 +497,24 @@ function Dashboard({ user, onLogout }: { user: UserProfile; onLogout: () => void
 
 // ─── Main Page ────────────────────────────────────────────
 export default function AccountPage() {
-  const { user, refreshUser, logout, refreshCart } = useStore()
+  const router = useRouter()
+  const { user, authReady, refreshUser, logout, refreshCart } = useStore()
   const [activeTab, setActiveTab] = useState<AuthTab>("login")
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    refreshUser().finally(() => setLoading(false))
-  }, [refreshUser])
+  const [registered, setRegistered] = useState(false)
 
   const handleAuthSuccess = async () => {
     await refreshUser()
-    await refreshCart()
+    await refreshCart() // merges the guest cart into the account cart
+    // ?next= is only honoured for same-site paths (no open redirect)
+    const next = new URLSearchParams(window.location.search).get("next")
+    if (next) router.replace(safeRedirectPath(next))
   }
 
-  if (loading) {
+  if (!authReady) {
     return (
       <>
         <Header />
-        <main className="min-h-screen flex items-center justify-center">
+        <main className="min-h-screen flex items-center justify-center" role="status" aria-label="Yuklanmoqda">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </main>
         <Footer />
@@ -495,13 +523,13 @@ export default function AccountPage() {
   }
 
   if (user) {
-    return <Dashboard user={user} onLogout={() => { logout(); }} />
+    return <Dashboard user={user} onLogout={logout} onProfileSaved={refreshUser} />
   }
 
   return (
     <>
       <Header />
-      <main className="min-h-screen bg-background pt-24 pb-20">
+      <main id="main-content" className="min-h-screen bg-background pt-24 pb-20">
         <div className="mx-auto max-w-md px-4 sm:px-6">
           <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-8">
             <Link href="/" className="hover:text-foreground">Bosh sahifa</Link>
@@ -523,10 +551,16 @@ export default function AccountPage() {
               ))}
             </div>
 
+            {registered && activeTab === "login" && (
+              <p role="status" className="mb-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+                Ro'yxatdan o'tdingiz. Endi hisobingizga kiring.
+              </p>
+            )}
+
             {activeTab === "login" ? (
               <LoginForm onSuccess={handleAuthSuccess} />
             ) : (
-              <RegisterForm onSuccess={() => setActiveTab("login")} />
+              <RegisterForm onSuccess={() => { setRegistered(true); setActiveTab("login") }} />
             )}
           </div>
         </div>

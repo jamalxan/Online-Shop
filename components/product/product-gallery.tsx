@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import { ChevronLeft, ChevronRight, ZoomIn, X } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, safeHex } from "@/lib/utils"
 import type { ColorVariant } from "@/lib/types"
 
 interface ProductGalleryProps {
@@ -26,6 +26,16 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
     setSelectedIndex(0)
   }, [activeColor?.id])
 
+  // ESC closes the lightbox
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(false)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [lightbox])
+
   const prev = () => setSelectedIndex(i => (i - 1 + images.length) % images.length)
   const next = () => setSelectedIndex(i => (i + 1) % images.length)
 
@@ -33,29 +43,34 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
     <>
       <div className="flex flex-col gap-4 sticky top-24">
         {/* Main Image */}
-        <div
-          className="relative overflow-hidden rounded-2xl bg-secondary aspect-square group cursor-zoom-in"
-          onClick={() => setLightbox(true)}
-        >
-          <Image
-            src={images[selectedIndex] || '/placeholder.jpg'}
-            alt={`${name}${activeColor ? ' — ' + activeColor.name : ''}`}
-            fill
-            className="object-cover transition-all duration-500 group-hover:scale-[1.03]"
-            priority
-          />
+        <div className="relative overflow-hidden rounded-2xl bg-secondary aspect-square group">
+          <button
+            type="button"
+            onClick={() => setLightbox(true)}
+            aria-label="Rasmni kattalashtirish"
+            className="absolute inset-0 cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <Image
+              src={images[selectedIndex] || '/placeholder.jpg'}
+              alt={`${name}${activeColor ? ' — ' + activeColor.name : ''}`}
+              fill
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              className="object-cover transition-all duration-500 group-hover:scale-[1.03]"
+              priority
+            />
+          </button>
 
           {/* Zoom hint */}
-          <div className="absolute top-3 right-3 rounded-full bg-background/80 backdrop-blur-sm p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ZoomIn className="h-4 w-4" />
+          <div className="pointer-events-none absolute top-3 right-3 rounded-full bg-background/80 backdrop-blur-sm p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ZoomIn className="h-4 w-4" aria-hidden="true" />
           </div>
 
           {/* Color badge */}
           {activeColor && (
-            <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-full bg-background/80 backdrop-blur-sm px-3 py-1.5">
+            <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-full bg-background/80 backdrop-blur-sm px-3 py-1.5">
               <span
                 className="h-3 w-3 rounded-full border border-white/30"
-                style={{ backgroundColor: activeColor.hex }}
+                style={{ backgroundColor: safeHex(activeColor.hex) }}
               />
               <span className="text-xs font-medium">{activeColor.name}</span>
             </div>
@@ -65,16 +80,20 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
           {images.length > 1 && (
             <>
               <button
+                type="button"
+                aria-label="Oldingi rasm"
                 onClick={(e) => { e.stopPropagation(); prev() }}
-                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm p-2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background shadow-sm"
+                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm p-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:bg-background shadow-sm"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </button>
               <button
+                type="button"
+                aria-label="Keyingi rasm"
                 onClick={(e) => { e.stopPropagation(); next() }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm p-2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background shadow-sm"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-background/80 backdrop-blur-sm p-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:bg-background shadow-sm"
               >
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </button>
             </>
           )}
@@ -86,6 +105,9 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
             {images.map((img, i) => (
               <button
                 key={i}
+                type="button"
+                aria-label={`${i + 1}-rasm`}
+                aria-current={selectedIndex === i}
                 onClick={() => setSelectedIndex(i)}
                 className={cn(
                   "relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border-2 transition-all duration-200",
@@ -94,7 +116,7 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
                     : "border-transparent hover:border-border hover:scale-102"
                 )}
               >
-                <Image src={img} alt={`${name} ${i + 1}`} fill className="object-cover" />
+                <Image src={img} alt="" fill sizes="80px" className="object-cover" />
               </button>
             ))}
           </div>
@@ -106,6 +128,8 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
             {images.map((_, i) => (
               <button
                 key={i}
+                type="button"
+                aria-label={`${i + 1}-rasm`}
                 onClick={() => setSelectedIndex(i)}
                 className={cn(
                   "h-2 rounded-full transition-all duration-200",
@@ -120,10 +144,16 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
       {/* Lightbox */}
       {lightbox && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${name} — rasmlar`}
           className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setLightbox(false)}
         >
           <button
+            type="button"
+            autoFocus
+            aria-label="Yopish"
             className="absolute top-4 right-4 rounded-full bg-white/10 p-3 text-white hover:bg-white/20 transition-colors"
             onClick={() => setLightbox(false)}
           >
@@ -132,12 +162,16 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
           {images.length > 1 && (
             <>
               <button
+                type="button"
+                aria-label="Oldingi rasm"
                 className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white hover:bg-white/20 transition-colors"
                 onClick={(e) => { e.stopPropagation(); prev() }}
               >
                 <ChevronLeft className="h-6 w-6" />
               </button>
               <button
+                type="button"
+                aria-label="Keyingi rasm"
                 className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/10 p-3 text-white hover:bg-white/20 transition-colors"
                 onClick={(e) => { e.stopPropagation(); next() }}
               >
@@ -153,6 +187,7 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
               src={images[selectedIndex]}
               alt={name}
               fill
+              sizes="(max-width: 768px) 100vw, 768px"
               className="object-contain"
             />
           </div>

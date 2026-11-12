@@ -1,59 +1,45 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useMemo, useState } from "react"
 import { ChevronDown, X, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
-import type { Product } from "@/lib/types"
+import { cn, isLightHex, safeHex } from "@/lib/utils"
 
 export interface FilterState {
+  /** "min-max" tokens (see lib/catalog.ts) */
   priceRanges: string[]
   storages: string[]
   colors: string[]
   inStock: boolean
 }
 
+export const EMPTY_FILTERS: FilterState = { priceRanges: [], storages: [], colors: [], inStock: false }
+
+const STORAGE_ORDER = ["64GB", "128GB", "256GB", "512GB", "1TB", "2TB"]
+
 interface ProductFiltersProps {
-  products: Product[]          // all products (for building filter options)
+  /** options that exist in this category / search — they come from the API, not from the visible page */
+  storages: string[]
+  colors: { name: string; hex: string }[]
+  priceRanges: { token: string; label: string }[]
   filters: FilterState
   onChange: (filters: FilterState) => void
 }
 
-export function ProductFilters({ products, filters, onChange }: ProductFiltersProps) {
+export function ProductFilters({ storages, colors: availableColors, priceRanges: priceOptions, filters, onChange }: ProductFiltersProps) {
   const [openSections, setOpenSections] = useState<string[]>(["price", "storage", "color"])
   const [isMobileOpen, setIsMobileOpen] = useState(false)
 
-  // Build dynamic filter options from actual products
   const availableStorages = useMemo(() => {
-    const set = new Set<string>()
-    products.forEach(p => {
-      p.storageOptions?.forEach(s => set.add(s.storage))
-    })
-    const order = ["64GB", "128GB", "256GB", "512GB", "1TB", "2TB"]
-    return [...set].sort((a, b) => {
-      const ai = order.indexOf(a)
-      const bi = order.indexOf(b)
+    return [...storages].sort((a, b) => {
+      const ai = STORAGE_ORDER.indexOf(a)
+      const bi = STORAGE_ORDER.indexOf(b)
       if (ai !== -1 && bi !== -1) return ai - bi
       return a.localeCompare(b)
     })
-  }, [products])
+  }, [storages])
 
-  const availableColors = useMemo(() => {
-    const map = new Map<string, string>()  // name -> hex
-    products.forEach(p => {
-      p.colorVariants?.forEach(c => {
-        if (!map.has(c.name)) map.set(c.name, c.hex)
-      })
-    })
-    return [...map.entries()].map(([name, hex]) => ({ name, hex }))
-  }, [products])
-
-  const priceRanges = [
-    { value: "under-500",   label: "$500 gacha" },
-    { value: "500-1000",    label: "$500 – $1,000" },
-    { value: "1000-2000",   label: "$1,000 – $2,000" },
-    { value: "over-2000",   label: "$2,000 dan yuqori" },
-  ]
+  const priceRanges = priceOptions.map(({ token, label }) => ({ value: token, label }))
 
   const toggleSection = (id: string) => {
     setOpenSections(prev =>
@@ -88,7 +74,7 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
     })
   }
 
-  const clearAll = () => onChange({ priceRanges: [], storages: [], colors: [], inStock: false })
+  const clearAll = () => onChange(EMPTY_FILTERS)
 
   const totalSelected =
     filters.priceRanges.length +
@@ -96,7 +82,7 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
     filters.colors.length +
     (filters.inStock ? 1 : 0)
 
-  const FilterContent = () => (
+  const filterContent = (idPrefix: string) => (
     <div className="space-y-1">
       {/* Header */}
       <div className="flex items-center justify-between pb-4 border-b border-border">
@@ -123,10 +109,17 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
       {/* In Stock */}
       <div className="py-3 border-b border-border">
         <label className="flex items-center gap-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            id={`${idPrefix}-in-stock`}
+            className="peer sr-only"
+            checked={filters.inStock}
+            onChange={() => onChange({ ...filters, inStock: !filters.inStock })}
+          />
           <div
-            onClick={() => onChange({ ...filters, inStock: !filters.inStock })}
+            aria-hidden="true"
             className={cn(
-              "h-5 w-5 rounded border-2 flex items-center justify-center transition-all",
+              "h-5 w-5 rounded border-2 flex items-center justify-center transition-all peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2",
               filters.inStock
                 ? "bg-foreground border-foreground"
                 : "border-border group-hover:border-foreground/50"
@@ -145,6 +138,8 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
       {/* Price Range */}
       <div className="border-b border-border py-2">
         <button
+          type="button"
+          aria-expanded={openSections.includes("price")}
           onClick={() => toggleSection("price")}
           className="flex w-full items-center justify-between py-2 text-left"
         >
@@ -157,10 +152,16 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
               const isSelected = filters.priceRanges.includes(value)
               return (
                 <label key={value} className="flex items-center gap-3 cursor-pointer group py-1">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={isSelected}
+                    onChange={() => togglePrice(value)}
+                  />
                   <div
-                    onClick={() => togglePrice(value)}
+                    aria-hidden="true"
                     className={cn(
-                      "h-5 w-5 rounded border-2 flex items-center justify-center transition-all shrink-0",
+                      "h-5 w-5 rounded border-2 flex items-center justify-center transition-all shrink-0 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2",
                       isSelected ? "bg-foreground border-foreground" : "border-border group-hover:border-foreground/50"
                     )}
                   >
@@ -184,6 +185,8 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
       {availableStorages.length > 0 && (
         <div className="border-b border-border py-2">
           <button
+            type="button"
+            aria-expanded={openSections.includes("storage")}
             onClick={() => toggleSection("storage")}
             className="flex w-full items-center justify-between py-2 text-left"
           >
@@ -197,6 +200,8 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
                 return (
                   <button
                     key={storage}
+                    type="button"
+                    aria-pressed={isSelected}
                     onClick={() => toggleStorage(storage)}
                     className={cn(
                       "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-150",
@@ -218,6 +223,8 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
       {availableColors.length > 0 && (
         <div className="py-2">
           <button
+            type="button"
+            aria-expanded={openSections.includes("color")}
             onClick={() => toggleSection("color")}
             className="flex w-full items-center justify-between py-2 text-left"
           >
@@ -226,12 +233,16 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
           </button>
           {openSections.includes("color") && (
             <div className="mt-2 flex flex-wrap gap-3 pb-2">
-              {availableColors.map(({ name, hex }) => {
+              {availableColors.map(({ name, hex: rawHex }) => {
                 const isSelected = filters.colors.includes(name)
-                const isLight = ['#FFFFFF', '#F2F0EB', '#F5F5F0', '#E3E4E5', '#F0F0EC'].includes(hex)
+                const hex = safeHex(rawHex)
+                const isLight = isLightHex(hex)
                 return (
                   <button
                     key={name}
+                    type="button"
+                    aria-label={name}
+                    aria-pressed={isSelected}
                     onClick={() => toggleColor(name)}
                     title={name}
                     className={cn(
@@ -290,25 +301,27 @@ export function ProductFilters({ products, filters, onChange }: ProductFiltersPr
       {/* Desktop sidebar */}
       <aside className="hidden lg:block w-64 shrink-0">
         <div className="sticky top-24 rounded-2xl border border-border bg-card p-5">
-          <FilterContent />
+          {filterContent("desktop")}
         </div>
       </aside>
 
       {/* Mobile Drawer */}
       {isMobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Filtrlar">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMobileOpen(false)} />
           <div className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-background p-6 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">Filtrlar</h3>
               <button
+                type="button"
+                aria-label="Filtrlarni yopish"
                 onClick={() => setIsMobileOpen(false)}
                 className="rounded-full p-2 hover:bg-secondary transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <FilterContent />
+            {filterContent("mobile")}
             <Button
               className="w-full mt-6 rounded-xl"
               onClick={() => setIsMobileOpen(false)}

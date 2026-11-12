@@ -1,163 +1,266 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
-  LayoutDashboard, Package, ShoppingCart, Users, Tag, Settings,
-  LogOut, Menu, X, ChevronRight, Bell, Search, Moon, Sun,
+  CreditCard, LayoutDashboard, Loader2, LogOut, Mail, Menu, Moon, Package, Settings,
+  ShoppingCart, Store, Sun, Tag, Users, X,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { getToken, getProfile, logout } from "@/lib/api"
+import type { LucideIcon } from "lucide-react"
+import { cn, pinActiveCurrency } from "@/lib/utils"
+import { adminGetCounters, fetchStoreInfoFresh } from "@/lib/api"
+import { useStore } from "@/lib/store-context"
+import type { AdminCounters } from "@/lib/types"
 
-const navItems = [
-  { href: "/admin",            label: "Dashboard",    icon: LayoutDashboard },
-  { href: "/admin/products",   label: "Mahsulotlar",  icon: Package },
-  { href: "/admin/orders",     label: "Buyurtmalar",  icon: ShoppingCart },
-  { href: "/admin/customers",  label: "Foydalanuvchilar", icon: Users },
-  { href: "/admin/categories", label: "Kategoriyalar", icon: Tag },
-  { href: "/admin/settings",   label: "Sozlamalar",   icon: Settings },
+const LOGIN_PATH = "/admin/login"
+const COUNTERS_REFRESH_MS = 60_000
+
+type NavItem = { href: string; label: string; icon: LucideIcon; counter?: keyof AdminCounters }
+
+const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
+  { title: "Umumiy", items: [{ href: "/admin", label: "Dashboard", icon: LayoutDashboard }] },
+  {
+    title: "Savdo",
+    items: [
+      { href: "/admin/orders", label: "Buyurtmalar", icon: ShoppingCart, counter: "pending_orders" },
+      { href: "/admin/payments", label: "To'lovlar", icon: CreditCard, counter: "payments_review" },
+      { href: "/admin/customers", label: "Mijozlar", icon: Users },
+    ],
+  },
+  {
+    title: "Katalog",
+    items: [
+      { href: "/admin/products", label: "Mahsulotlar", icon: Package },
+      { href: "/admin/categories", label: "Kategoriyalar", icon: Tag },
+    ],
+  },
+  {
+    title: "Tizim",
+    items: [
+      { href: "/admin/messages", label: "Murojaatlar", icon: Mail, counter: "unread_messages" },
+      { href: "/admin/settings", label: "Sozlamalar", icon: Settings },
+    ],
+  },
 ]
+
+const ALL_ITEMS = NAV_GROUPS.flatMap((group) => group.items)
+
+function isActive(pathname: string, href: string): boolean {
+  return pathname === href || (href !== "/admin" && pathname.startsWith(`${href}`))
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const { user, authReady, logout } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [user, setUser] = useState<{ first_name?: string; email?: string } | null>(null)
   const [theme, setTheme] = useState<"light" | "dark">("light")
+  const [counters, setCounters] = useState<AdminCounters | null>(null)
+  const [currencyReady, setCurrencyReady] = useState(false)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+
+  const isLoginPage = pathname === LOGIN_PATH
+  // `is_staff` comes from /api/profile/ (read-only). This gate only hides the UI —
+  // every /api/admin/* endpoint is authorised by the backend itself.
+  const isStaff = Boolean(user?.is_staff)
 
   useEffect(() => {
-    // Check auth
-    if (!getToken()) { router.push("/account"); return }
-    getProfile().then(p => {
-      if (!p) { router.push("/account"); return }
-      setUser(p)
-    })
-    // Theme
-    const saved = localStorage.getItem("theme") as "light" | "dark" | null
-    if (saved) { setTheme(saved); document.documentElement.classList.toggle("dark", saved === "dark") }
-  }, [router])
+    if (isLoginPage || !authReady) return
+    if (!isStaff) router.replace(LOGIN_PATH)
+  }, [isLoginPage, authReady, isStaff, router])
+
+  useEffect(() => {
+    let saved: string | null = null
+    try { saved = localStorage.getItem("theme") } catch { /* storage unavailable */ }
+    if (saved === "light" || saved === "dark") {
+      setTheme(saved)
+      document.documentElement.classList.toggle("dark", saved === "dark")
+    }
+    // the dark class must not leak into the storefront
+    return () => document.documentElement.classList.remove("dark")
+  }, [])
+
+  // Work-queue badges: refreshed on navigation, every minute, and when the tab becomes visible again.
+  const refreshCounters = useCallback(async () => {
+    const res = await adminGetCounters()
+    if (res.ok) setCounters(res.data)
+  }, [])
+
+  useEffect(() => {
+    if (isLoginPage || !isStaff) return
+    void refreshCounters()
+    const timer = setInterval(() => { if (!document.hidden) void refreshCounters() }, COUNTERS_REFRESH_MS)
+    const onVisible = () => { if (!document.hidden) void refreshCounters() }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisible) }
+  }, [isLoginPage, isStaff, pathname, refreshCounters])
+
+  // Mobile drawer: focus moves into it when it opens, Esc closes it, focus returns to the menu button.
+  useEffect(() => {
+    if (!sidebarOpen) return
+    const menuButton = menuButtonRef.current
+    closeButtonRef.current?.focus()
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setSidebarOpen(false) }
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      menuButton?.focus()
+    }
+  }, [sidebarOpen])
 
   const toggleTheme = () => {
     const next = theme === "light" ? "dark" : "light"
     setTheme(next)
-    localStorage.setItem("theme", next)
+    try { localStorage.setItem("theme", next) } catch { /* ignore */ }
     document.documentElement.classList.toggle("dark", next === "dark")
   }
 
-  const handleLogout = () => { logout(); router.push("/") }
+  const handleLogout = () => {
+    logout()
+    router.replace(LOGIN_PATH)
+  }
+
+  // Prices are typed and read in the shop currency. The storefront's copy of that setting comes
+  // from a page cache (up to a minute old); the admin panel reads it fresh before showing any price.
+  useEffect(() => {
+    if (isLoginPage || !isStaff) return
+    let cancelled = false
+    void fetchStoreInfoFresh().then((info) => {
+      if (cancelled) return
+      if (info) pinActiveCurrency(info.currency)
+      setCurrencyReady(true) // on a network error the cached value is used
+    })
+    return () => { cancelled = true }
+  }, [isLoginPage, isStaff])
+
+  // The login page renders without the admin chrome and without the guard (no redirect loop).
+  if (isLoginPage) return <>{children}</>
+
+  // Nothing admin-related is rendered until the profile says the user is staff.
+  if (!authReady || !isStaff || !currencyReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background" role="status">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden="true" />
+        <span className="sr-only">Tekshirilmoqda…</span>
+      </div>
+    )
+  }
+
+  const current = ALL_ITEMS.find((item) => item.href !== "/admin" && isActive(pathname, item.href))
+  const initial = (user?.first_name || user?.email || "A").charAt(0).toUpperCase()
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Sidebar Overlay (mobile) */}
+    <div className="flex min-h-screen bg-background text-foreground">
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
 
-      {/* Sidebar */}
-      <aside className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border flex flex-col transition-transform duration-300",
-        "lg:relative lg:translate-x-0",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
-        {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-5 border-b border-border shrink-0">
-          <Link href="/admin" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground">
-              <span className="text-background font-bold text-sm">A</span>
-            </div>
-            <span className="font-semibold text-sm">APEX Admin</span>
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card text-foreground duration-300 motion-reduce:transition-none",
+          "lg:visible lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
+          // A closed drawer is `invisible` on phones, so its links leave the tab order and the accessibility
+          // tree. Visibility is animated only while closing (hidden after the slide); on opening it flips at
+          // once, otherwise the close button could not take focus on the first frame.
+          sidebarOpen ? "visible translate-x-0 transition-[translate]" : "invisible -translate-x-full transition-[translate,visibility]",
+        )}
+      >
+        <div className="flex h-16 shrink-0 items-center justify-between px-5">
+          <Link href="/admin" className="flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-foreground">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-foreground font-serif text-lg font-bold text-background" aria-hidden="true">A</span>
+            <span className="leading-tight">
+              <span className="block text-sm font-semibold tracking-tight">APEX</span>
+              <span className="block text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Boshqaruv</span>
+            </span>
           </Link>
-          <button className="lg:hidden p-1 rounded hover:bg-secondary" onClick={() => setSidebarOpen(false)}>
-            <X className="h-4 w-4" />
+          <button type="button" className="rounded-lg p-2 hover:bg-secondary lg:hidden focus-visible:outline-2 focus-visible:outline-foreground" onClick={() => setSidebarOpen(false)} aria-label="Menyuni yopish" ref={closeButtonRef}>
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/admin" && pathname.startsWith(href))
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 group",
-                  active
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                )}
-              >
-                <Icon className={cn("h-4 w-4 shrink-0", active ? "text-background" : "text-muted-foreground group-hover:text-foreground")} />
-                <span className="flex-1">{label}</span>
-                {active && <ChevronRight className="h-3 w-3 opacity-60" />}
-              </Link>
-            )
-          })}
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Admin menyu">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.title}>
+              <p className="mb-1.5 px-3 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{group.title}</p>
+              <ul className="space-y-0.5">
+                {group.items.map(({ href, label, icon: Icon, counter }) => {
+                  const active = isActive(pathname, href)
+                  const count = counter ? counters?.[counter] ?? 0 : 0
+                  return (
+                    <li key={href}>
+                      <Link
+                        href={href}
+                        onClick={() => setSidebarOpen(false)}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "group flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors",
+                          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground",
+                          active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                        )}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span className="flex-1">{label}</span>
+                        {count > 0 && (
+                          <span className={cn(
+                            "min-w-6 rounded-md px-1.5 py-0.5 text-center text-xs font-semibold tabular-nums",
+                            active ? "bg-background text-foreground" : "bg-foreground text-background",
+                          )}>
+                            {count > 99 ? "99+" : count}
+                            <span className="sr-only"> ta kutilmoqda</span>
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
         </nav>
 
-        {/* User */}
-        <div className="border-t border-border p-3 shrink-0">
+        <div className="shrink-0 space-y-2 border-t border-border p-3">
           <div className="flex items-center gap-3 rounded-xl bg-secondary px-3 py-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background text-xs font-bold shrink-0">
-              {user?.first_name?.charAt(0)?.toUpperCase() || "A"}
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-bold text-background" aria-hidden="true">{initial}</span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium">{user?.first_name || "Admin"}</p>
+              <p className="truncate text-xs text-muted-foreground">{user?.email || ""}</p>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate">{user?.first_name || "Admin"}</p>
-              <p className="text-xs text-muted-foreground truncate">{user?.email || ""}</p>
-            </div>
-            <button onClick={handleLogout} className="p-1 rounded hover:bg-background transition-colors shrink-0" title="Chiqish">
-              <LogOut className="h-3.5 w-3.5 text-muted-foreground" />
+            <button type="button" onClick={handleLogout} className="shrink-0 rounded-lg p-2 hover:bg-background focus-visible:outline-2 focus-visible:outline-foreground" aria-label="Chiqish" title="Chiqish">
+              <LogOut className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-          <Link href="/" className="mt-2 flex items-center justify-center gap-2 rounded-xl border border-border py-2 text-xs text-muted-foreground hover:bg-secondary transition-colors">
-            ← Do'konga qaytish
+          <Link href="/" className="flex min-h-9 items-center justify-center gap-2 rounded-xl border border-border text-xs text-muted-foreground transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-foreground">
+            <Store className="h-3.5 w-3.5" aria-hidden="true" />
+            Do&apos;konni ochish
           </Link>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Bar */}
-        <header className="h-16 border-b border-border bg-card flex items-center justify-between px-4 sm:px-6 shrink-0">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-border bg-card/90 px-4 backdrop-blur sm:px-8">
           <div className="flex items-center gap-3">
-            <button
-              className="lg:hidden p-2 rounded-xl hover:bg-secondary transition-colors"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
+            <button type="button" className="rounded-xl p-2 hover:bg-secondary lg:hidden focus-visible:outline-2 focus-visible:outline-foreground" onClick={() => setSidebarOpen(true)} aria-label="Menyuni ochish" aria-expanded={sidebarOpen} ref={menuButtonRef}>
+              <Menu className="h-5 w-5" aria-hidden="true" />
             </button>
-            {/* Breadcrumb */}
-            <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-              <Link href="/admin" className="hover:text-foreground">Admin</Link>
-              {pathname !== "/admin" && (
-                <>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="text-foreground capitalize">
-                    {navItems.find(n => pathname.startsWith(n.href) && n.href !== "/admin")?.label}
-                  </span>
-                </>
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              <Link href="/admin" className="rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-foreground">Admin</Link>
+              {current && <><span className="mx-2" aria-hidden="true">/</span><span className="text-foreground">{current.label}</span></>}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-xl hover:bg-secondary transition-colors text-muted-foreground"
-            >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <button className="p-2 rounded-xl hover:bg-secondary transition-colors text-muted-foreground relative">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Yorug' rejimga o'tish" : "Qorong'i rejimga o'tish"}
+            className="rounded-xl p-2.5 text-muted-foreground transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-foreground"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+          </button>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {children}
+        <main id="main-content" className="flex-1 p-4 sm:p-8">
+          <div className="mx-auto max-w-7xl">{children}</div>
         </main>
       </div>
     </div>

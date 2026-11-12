@@ -6,23 +6,23 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Search, ShoppingBag, Heart, User, Menu, X, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, formatPrice } from "@/lib/utils"
 import { useStore } from "@/lib/store-context"
-import { searchProducts, getImageUrl } from "@/lib/api"
+import { searchProducts } from "@/lib/api"
 import type { Product } from "@/lib/types"
 
-const navigation = [
-  { name: "iPhone", href: "/category/iphone" },
-  { name: "MacBook", href: "/category/macbook" },
-  { name: "iPad", href: "/category/ipad" },
-  { name: "Watch", href: "/category/watch" },
-  { name: "AirPods", href: "/category/airpods" },
-  { name: "Accessories", href: "/category/accessories" },
-]
+const SEARCH_DEBOUNCE_MS = 350
+const MAX_SUGGESTIONS = 6
 
 export function Header() {
   const router = useRouter()
-  const { cartCount } = useStore()
+  const { cartCount, categories } = useStore()
+
+  // Real categories from the API (plus the full catalogue link)
+  const navigation = [
+    ...categories.map((c) => ({ name: c.name, href: c.href })),
+    { name: "Barcha mahsulotlar", href: "/products" },
+  ]
 
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -32,37 +32,62 @@ export function Header() {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<Product[]>([])
   const [searching, setSearching] = useState(false)
-  const debounceRef = useRef<NodeJS.Timeout | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 10)
-    window.addEventListener("scroll", handleScroll)
+    handleScroll()
+    window.addEventListener("scroll", handleScroll, { passive: true })
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
-  // ESC tugmasi
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeSearch()
-    }
-    window.addEventListener("keydown", handleKey)
-    return () => window.removeEventListener("keydown", handleKey)
+  const cancelPendingSearch = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    abortRef.current?.abort()
+    abortRef.current = null
   }, [])
 
-  // Input focus when search opens
+  const closeSearch = useCallback(() => {
+    cancelPendingSearch()
+    setIsSearchOpen(false)
+    setQuery("")
+    setResults([])
+    setSearching(false)
+  }, [cancelPendingSearch])
+
+  // ESC closes overlays; lock page scroll while one is open
+  const overlayOpen = isSearchOpen || isMobileMenuOpen
   useEffect(() => {
-    if (isSearchOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50)
+    if (!overlayOpen) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      closeSearch()
+      setIsMobileMenuOpen(false)
     }
+    window.addEventListener("keydown", handleKey)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", handleKey)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [overlayOpen, closeSearch])
+
+  useEffect(() => {
+    if (isSearchOpen) inputRef.current?.focus()
   }, [isSearchOpen])
 
-  // Debounced search
+  useEffect(() => cancelPendingSearch, [cancelPendingSearch])
+
+  // Debounced search; stale responses are aborted so they can never overwrite newer ones
   const handleQueryChange = useCallback((value: string) => {
     setQuery(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+    cancelPendingSearch()
 
-    if (!value.trim()) {
+    const term = value.trim()
+    if (!term) {
       setResults([])
       setSearching(false)
       return
@@ -70,23 +95,31 @@ export function Header() {
 
     setSearching(true)
     debounceRef.current = setTimeout(async () => {
-      const data = await searchProducts(value.trim())
-      setResults(data.slice(0, 6))
+      const controller = new AbortController()
+      abortRef.current = controller
+      const data = await searchProducts(term, controller.signal)
+      if (controller.signal.aborted) return
+      setResults(data.slice(0, MAX_SUGGESTIONS))
       setSearching(false)
-    }, 400)
-  }, [])
+    }, SEARCH_DEBOUNCE_MS)
+  }, [cancelPendingSearch])
 
-  function closeSearch() {
-    setIsSearchOpen(false)
-    setQuery("")
-    setResults([])
-    setSearching(false)
-  }
-
-  function handleResultClick(productId: string) {
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const term = query.trim()
+    if (!term) return
     closeSearch()
-    router.push(`/product/${productId}`)
+    router.push(`/products?q=${encodeURIComponent(term)}`)
   }
+
+  const logo = (
+    <Link href="/" className="flex items-center gap-2" aria-label="APEX Store — bosh sahifa">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground">
+        <span className="text-sm font-bold text-background" aria-hidden="true">A</span>
+      </div>
+      <span className="text-lg font-semibold tracking-tight">APEX</span>
+    </Link>
+  )
 
   return (
       <>
@@ -100,19 +133,13 @@ export function Header() {
         >
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between lg:h-20">
-              {/* Logo */}
-              <Link href="/" className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground">
-                  <span className="text-sm font-bold text-background">A</span>
-                </div>
-                <span className="text-lg font-semibold tracking-tight">APEX</span>
-              </Link>
+              {logo}
 
               {/* Desktop Navigation */}
-              <nav className="hidden lg:flex items-center gap-8">
+              <nav className="hidden lg:flex items-center gap-8" aria-label="Kategoriyalar">
                 {navigation.map((item) => (
                     <Link
-                        key={item.name}
+                        key={item.href}
                         href={item.href}
                         className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
                     >
@@ -122,37 +149,36 @@ export function Header() {
               </nav>
 
               {/* Actions */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2">
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="hidden sm:flex"
                     onClick={() => setIsSearchOpen(true)}
+                    aria-label="Qidiruv"
                 >
-                  <Search className="h-5 w-5" />
-                  <span className="sr-only">Search</span>
+                  <Search className="h-5 w-5" aria-hidden="true" />
                 </Button>
                 <Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
-                  <Link href="/wishlist">
-                    <Heart className="h-5 w-5" />
-                    <span className="sr-only">Wishlist</span>
+                  <Link href="/wishlist" aria-label="Sevimlilar">
+                    <Heart className="h-5 w-5" aria-hidden="true" />
                   </Link>
                 </Button>
                 <Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
-                  <Link href="/account">
-                    <User className="h-5 w-5" />
-                    <span className="sr-only">Account</span>
+                  <Link href="/account" aria-label="Hisob">
+                    <User className="h-5 w-5" aria-hidden="true" />
                   </Link>
                 </Button>
                 <Button variant="ghost" size="icon" className="relative" asChild>
-                  <Link href="/cart">
-                    <ShoppingBag className="h-5 w-5" />
+                  <Link href="/cart" aria-label={cartCount > 0 ? `Savat, ${cartCount} ta mahsulot` : "Savat"}>
+                    <ShoppingBag className="h-5 w-5" aria-hidden="true" />
                     {cartCount > 0 && (
-                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-medium text-background">
-                      {cartCount > 99 ? "99+" : cartCount}
-                    </span>
+                        <span
+                            aria-hidden="true"
+                            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-0.5 text-[10px] font-medium text-background"
+                        >
+                          {cartCount > 99 ? "99+" : cartCount}
+                        </span>
                     )}
-                    <span className="sr-only">Cart</span>
                   </Link>
                 </Button>
                 <Button
@@ -160,37 +186,37 @@ export function Header() {
                     size="icon"
                     className="lg:hidden"
                     onClick={() => setIsMobileMenuOpen(true)}
+                    aria-label="Menyuni ochish"
+                    aria-expanded={isMobileMenuOpen}
                 >
-                  <Menu className="h-5 w-5" />
-                  <span className="sr-only">Menu</span>
+                  <Menu className="h-5 w-5" aria-hidden="true" />
                 </Button>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu — unmounted from the a11y tree and tab order while closed */}
         <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menyu"
+            inert={!isMobileMenuOpen}
             className={cn(
-                "fixed inset-0 z-50 bg-background transition-transform duration-300 lg:hidden",
-                isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
+                "fixed inset-0 z-50 overflow-y-auto bg-background transition-transform duration-300 lg:hidden",
+                isMobileMenuOpen ? "translate-x-0" : "translate-x-full invisible"
             )}
         >
           <div className="flex h-16 items-center justify-between px-4">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground">
-                <span className="text-sm font-bold text-background">A</span>
-              </div>
-              <span className="text-lg font-semibold tracking-tight">APEX</span>
-            </Link>
-            <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(false)}>
-              <X className="h-5 w-5" />
+            {logo}
+            <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(false)} aria-label="Menyuni yopish">
+              <X className="h-5 w-5" aria-hidden="true" />
             </Button>
           </div>
-          <nav className="flex flex-col gap-1 px-4 pt-8">
+          <nav className="flex flex-col gap-1 px-4 pt-8 pb-10" aria-label="Kategoriyalar">
             {navigation.map((item) => (
                 <Link
-                    key={item.name}
+                    key={item.href}
                     href={item.href}
                     className="flex items-center py-4 text-2xl font-medium border-b border-border"
                     onClick={() => setIsMobileMenuOpen(false)}
@@ -200,15 +226,15 @@ export function Header() {
             ))}
             <div className="flex items-center gap-4 pt-8">
               <Button variant="outline" size="lg" className="flex-1" asChild>
-                <Link href="/account">
-                  <User className="mr-2 h-4 w-4" />
-                  Account
+                <Link href="/account" onClick={() => setIsMobileMenuOpen(false)}>
+                  <User className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Hisob
                 </Link>
               </Button>
               <Button variant="outline" size="lg" className="flex-1" asChild>
-                <Link href="/wishlist">
-                  <Heart className="mr-2 h-4 w-4" />
-                  Wishlist
+                <Link href="/wishlist" onClick={() => setIsMobileMenuOpen(false)}>
+                  <Heart className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Sevimlilar
                 </Link>
               </Button>
             </div>
@@ -216,83 +242,94 @@ export function Header() {
         </div>
 
         {/* Search Modal */}
-        <div
-            className={cn(
-                "fixed inset-0 z-50 bg-background/95 backdrop-blur-sm transition-opacity duration-300",
-                isSearchOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-            )}
-            onClick={closeSearch}
-        >
-          <div
-              className="mx-auto max-w-2xl px-4 pt-24"
-              onClick={(e) => e.stopPropagation()}
-          >
-            {/* Input */}
-            <div className="relative">
-              {searching ? (
-                  <Loader2 className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground animate-spin" />
-              ) : (
-                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-              )}
-              <input
-                  ref={inputRef}
-                  type="search"
-                  value={query}
-                  onChange={(e) => handleQueryChange(e.target.value)}
-                  placeholder="Search products..."
-                  className="w-full rounded-xl border border-border bg-card py-4 pl-12 pr-12 text-lg outline-none focus:ring-2 focus:ring-ring"
-              />
-              {query && (
+        {isSearchOpen && (
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Mahsulot qidirish"
+                className="fixed inset-0 z-50 overflow-y-auto bg-background/95 backdrop-blur-sm animate-in fade-in duration-200"
+                onClick={closeSearch}
+            >
+              <div
+                  className="mx-auto max-w-2xl px-4 pt-24 pb-10"
+                  onClick={(e) => e.stopPropagation()}
+              >
+                <form onSubmit={handleSearchSubmit} role="search" className="relative">
+                  {searching ? (
+                      <Loader2 className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground animate-spin" aria-hidden="true" />
+                  ) : (
+                      <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  <input
+                      ref={inputRef}
+                      type="search"
+                      name="q"
+                      value={query}
+                      onChange={(e) => handleQueryChange(e.target.value)}
+                      placeholder="Mahsulot qidirish..."
+                      aria-label="Mahsulot qidirish"
+                      autoComplete="off"
+                      maxLength={100}
+                      className="w-full rounded-xl border border-border bg-card py-4 pl-12 pr-12 text-lg outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-search-cancel-button]:hidden"
+                  />
                   <button
-                      onClick={() => handleQueryChange("")}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      type="button"
+                      onClick={() => (query ? handleQueryChange("") : closeSearch())}
+                      aria-label={query ? "Tozalash" : "Qidiruvni yopish"}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <X className="h-5 w-5" />
+                    <X className="h-5 w-5" aria-hidden="true" />
                   </button>
-              )}
-            </div>
+                </form>
 
-            {/* Results */}
-            {results.length > 0 && (
-                <div className="mt-2 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
-                  {results.map((product) => (
-                      <button
-                          key={product.id}
-                          onClick={() => handleResultClick(product.id)}
-                          className="flex w-full items-center gap-4 px-4 py-3 hover:bg-secondary transition-colors text-left border-b border-border last:border-0"
-                      >
-                        <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-secondary">
-                          <Image
-                              src={product.image || "/placeholder.jpg"}
-                              alt={product.name}
-                              fill
-                              className="object-cover"
-                              unoptimized
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{product.name}</p>
-                          <p className="text-sm text-muted-foreground">${product.price.toLocaleString()}</p>
-                        </div>
-                      </button>
-                  ))}
-                </div>
-            )}
+                {/* Results */}
+                {results.length > 0 && (
+                    <ul className="mt-2 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+                      {results.map((product) => (
+                          <li key={product.id} className="border-b border-border last:border-0">
+                            <Link
+                                href={`/product/${product.id}`}
+                                onClick={closeSearch}
+                                className="flex w-full items-center gap-4 px-4 py-3 hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none transition-colors text-left"
+                            >
+                              <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-secondary">
+                                <Image
+                                    src={product.image}
+                                    alt=""
+                                    fill
+                                    sizes="48px"
+                                    className="object-cover"
+                                />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{product.name}</p>
+                                <p className="text-sm text-muted-foreground">{formatPrice(product.price)}</p>
+                              </div>
+                            </Link>
+                          </li>
+                      ))}
+                      <li>
+                        <button
+                            type="button"
+                            onClick={handleSearchSubmit}
+                            className="w-full px-4 py-3 text-sm font-medium text-left hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none transition-colors"
+                        >
+                          Barcha natijalarni ko'rish
+                        </button>
+                      </li>
+                    </ul>
+                )}
 
-            {/* No results */}
-            {!searching && query.trim() && results.length === 0 && (
-                <div className="mt-4 text-center text-sm text-muted-foreground">
-                  "{query}" bo'yicha hech narsa topilmadi
-                </div>
-            )}
-
-            {!query && (
-                <p className="mt-4 text-center text-sm text-muted-foreground">
-                  Press ESC to close
+                <p className="mt-4 text-center text-sm text-muted-foreground" aria-live="polite">
+                  {!searching && query.trim() && results.length === 0
+                      ? `"${query.trim()}" bo'yicha hech narsa topilmadi`
+                      : !query
+                          ? "Yopish uchun ESC tugmasini bosing"
+                          : ""}
                 </p>
-            )}
-          </div>
-        </div>
+              </div>
+            </div>
+        )}
       </>
   )
 }

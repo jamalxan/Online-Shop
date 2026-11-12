@@ -1,14 +1,12 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import { useParams } from "next/navigation"
+import { cache } from "react"
+import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { CategoryHeader } from "@/components/category/category-header"
-import { ProductFilters, type FilterState } from "@/components/category/product-filters"
-import { ProductGrid } from "@/components/category/product-grid"
-import { getProductsByCategory } from "@/lib/api"
-import type { Product } from "@/lib/types"
+import { CategoryBrowser } from "@/components/category/category-browser"
+import { getCategoryBySlug, getProductFacets, getProductPage } from "@/lib/api"
+import { CATALOG_PAGE_SIZE, parseCatalogParams } from "@/lib/catalog"
 
 const categoryBanners: Record<string, string> = {
   iphone:      "https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=1600&q=80",
@@ -19,61 +17,46 @@ const categoryBanners: Record<string, string> = {
   accessories: "https://images.unsplash.com/photo-1625772299848-391b6a87d7b3?w=1600&q=80",
 }
 
-const defaultFilters: FilterState = {
-  priceRanges: [],
-  storages: [],
-  colors: [],
-  inStock: false,
+// One fetch per request, shared by generateMetadata and the page.
+const loadCategory = cache((slug: string) => getCategoryBySlug(slug))
+
+type PageProps = {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
-export default function CategoryPage() {
-  const params = useParams()
-  const slug = params?.slug as string
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params
+  const category = await loadCategory(slug).catch(() => null)
+  if (!category) return { title: "Kategoriya topilmadi", robots: { index: false } }
+  return {
+    title: category.name,
+    description: `${category.name} — APEX Store'dagi original Apple mahsulotlari va narxlari.`,
+    alternates: { canonical: category.href },
+  }
+}
 
-  const [products, setProducts] = useState<Product[]>([])
-  const [categoryName, setCategoryName] = useState("")
-  const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState<FilterState>(defaultFilters)
+export default async function CategoryPage({ params, searchParams }: PageProps) {
+  const { slug } = await params
+  const category = await loadCategory(slug)
+  if (!category) notFound()
 
-  useEffect(() => {
-    if (!slug) return
-    setLoading(true)
-    getProductsByCategory(slug).then(({ products, categoryName }) => {
-      setProducts(products)
-      setCategoryName(categoryName)
-      setLoading(false)
-    })
-  }, [slug])
+  // the search box is not part of a category listing
+  const filters = { ...parseCatalogParams(await searchParams), q: "" }
+  const [page, facets] = await Promise.all([
+    getProductPage({ ...filters, category: category.id, pageSize: CATALOG_PAGE_SIZE }),
+    getProductFacets({ category: category.id }),
+  ])
 
-  const banner = categoryBanners[slug] ?? categoryBanners["accessories"]
+  const banner = categoryBanners[category.slug] ?? categoryBanners.accessories
 
   return (
     <>
       <Header />
-      <main className="pt-16 lg:pt-20">
-        <CategoryHeader
-          name={categoryName || slug}
-          description=""
-          banner={banner}
-          productCount={products.length}
-        />
+      <main id="main-content" className="pt-16 lg:pt-20">
+        <CategoryHeader name={category.name} banner={banner} productCount={facets.count} />
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-          {loading ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="rounded-2xl bg-secondary aspect-[3/4] animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col lg:flex-row gap-8">
-              <ProductFilters
-                products={products}
-                filters={filters}
-                onChange={setFilters}
-              />
-              <ProductGrid products={products} filters={filters} />
-            </div>
-          )}
+          <CategoryBrowser page={page} facets={facets} filters={filters} basePath={category.href} />
         </div>
       </main>
       <Footer />

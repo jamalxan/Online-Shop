@@ -1,123 +1,188 @@
 "use client"
 
-import { useState } from "react"
-import { Search, Mail, Phone, ShoppingCart, User } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { useCallback, useState } from "react"
+import { Ban, Eye, RotateCcw, Users } from "lucide-react"
+import {
+  ConfirmDialog, EmptyState, ErrorBanner, FilterTabs, Modal, OrderStatusBadge, PageHeader, Pagination, Panel,
+  SearchInput, SkeletonRows, Spinner, buttonClass, useDebounced, useLoader,
+} from "@/components/admin/ui"
+import { adminGetCustomer, adminGetCustomers, adminSetCustomerActive } from "@/lib/api"
+import { cn, formatDate, formatPrice } from "@/lib/utils"
+import type { AdminCustomer } from "@/lib/types"
 
-interface Customer {
-  id: number
-  name: string
-  email: string
-  phone: string
-  orders: number
-  totalSpent: number
-  joinDate: string
-  status: "active" | "inactive"
+type State = "all" | "active" | "blocked"
+const STATES: readonly (readonly [State, string])[] = [["all", "Barchasi"], ["active", "Faol"], ["blocked", "Bloklangan"]]
+
+function fullName(customer: AdminCustomer): string {
+  return [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "—"
 }
 
-const DEMO_CUSTOMERS: Customer[] = [
-  { id: 1, name: "Alisher Nazarov",  email: "alisher@mail.ru",   phone: "+998901234567", orders: 5,  totalSpent: 4799,  joinDate: "2024-12-01", status: "active" },
-  { id: 2, name: "Malika Yusupova",  email: "malika@gmail.com",  phone: "+998912345678", orders: 3,  totalSpent: 2198,  joinDate: "2025-01-15", status: "active" },
-  { id: 3, name: "Bobur Ismoilov",   email: "bobur@mail.uz",     phone: "+998923456789", orders: 1,  totalSpent: 549,   joinDate: "2025-03-20", status: "active" },
-  { id: 4, name: "Nilufar Rahimova", email: "nilufar@gmail.com", phone: "+998934567890", orders: 7,  totalSpent: 6240,  joinDate: "2024-10-10", status: "active" },
-  { id: 5, name: "Sardor Toshmatov", email: "sardor@yandex.ru",  phone: "+998945678901", orders: 2,  totalSpent: 1248,  joinDate: "2025-02-05", status: "inactive" },
-  { id: 6, name: "Zulfiya Xolmatova",email: "zulfiya@mail.ru",   phone: "+998956789012", orders: 4,  totalSpent: 1596,  joinDate: "2025-01-28", status: "active" },
-  { id: 7, name: "Jasur Qodirov",    email: "jasur@gmail.com",   phone: "+998967890123", orders: 6,  totalSpent: 5394,  joinDate: "2024-11-15", status: "active" },
-  { id: 8, name: "Shahnoza Mirzaeva",email: "shahnoza@mail.uz",  phone: "+998978901234", orders: 2,  totalSpent: 1148,  joinDate: "2025-04-01", status: "active" },
-]
+function CustomerDetail({ customerId, onClose, onChanged }: {
+  customerId: number
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const load = useCallback(() => adminGetCustomer(customerId), [customerId])
+  const { data: customer, loading, error, reload } = useLoader(load)
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState("")
+
+  async function setActive(isActive: boolean) {
+    if (busy) return
+    setBusy(true)
+    setActionError("")
+    const res = await adminSetCustomerActive(customerId, isActive)
+    setBusy(false)
+    if (!res.ok) { setActionError(res.error); return }
+    setConfirm(false)
+    reload()
+    onChanged()
+  }
+
+  return (
+    <>
+      <Modal title={customer ? fullName(customer) : "Mijoz"} onClose={onClose} size="lg" busy={busy}>
+        <ErrorBanner message={error} onRetry={reload} />
+        {!customer && loading && <div className="flex justify-center py-12"><Spinner /></div>}
+        {customer && (
+          <div className="space-y-5">
+            <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              {[
+                { label: "Email", value: customer.email || "—" },
+                { label: "Telefon", value: customer.phone_number || "—" },
+                { label: "Ro'yxatdan o'tgan", value: formatDate(customer.date_joined) },
+                { label: "Oxirgi kirish", value: formatDate(customer.last_login, true) },
+                { label: "Buyurtmalar", value: String(customer.orders_count) },
+                { label: "Jami xarid", value: formatPrice(customer.total_spent) },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-xl bg-secondary p-3">
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="mt-0.5 break-words font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4">
+              <div>
+                <p className="text-sm font-medium">{customer.is_active ? "Hisob faol" : "Hisob bloklangan"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {customer.is_active
+                    ? "Bloklansa, mijoz tizimga kira olmaydi va ochiq sessiyalari darhol yopiladi."
+                    : "Blokdan chiqarilsa, mijoz yana kirishi mumkin."}
+                </p>
+              </div>
+              {customer.is_active ? (
+                <button type="button" className={buttonClass.danger} onClick={() => { setActionError(""); setConfirm(true) }} disabled={busy}>
+                  <Ban className="h-4 w-4" aria-hidden="true" />
+                  Bloklash
+                </button>
+              ) : (
+                <button type="button" className={buttonClass.primary} onClick={() => void setActive(true)} disabled={busy}>
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  Blokdan chiqarish
+                </button>
+              )}
+              {actionError && !confirm && <p role="alert" className="w-full text-sm text-red-700 dark:text-red-300">{actionError}</p>}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">Oxirgi buyurtmalar</h3>
+              {customer.orders.length === 0 ? (
+                <p className="rounded-xl bg-secondary px-4 py-6 text-center text-sm text-muted-foreground">Hali buyurtma bermagan</p>
+              ) : (
+                <ul className="divide-y divide-border rounded-xl border border-border">
+                  {customer.orders.map((order) => (
+                    <li key={order.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
+                      <span className="font-mono text-xs font-semibold">#{order.id}</span>
+                      <span className="min-w-0 flex-1 truncate">{order.product?.title} × {order.quantity}</span>
+                      <span className="text-xs text-muted-foreground">{formatDate(order.created_at)}</span>
+                      <span className="font-semibold tabular-nums">{formatPrice(order.total_price)}</span>
+                      <OrderStatusBadge status={order.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {confirm && customer && (
+        <ConfirmDialog
+          title="Mijozni bloklash"
+          message={<>{fullName(customer)} ({customer.email || customer.phone_number}) tizimga kira olmay qoladi. Mavjud buyurtmalari saqlanadi.</>}
+          confirmLabel="Bloklash"
+          busy={busy}
+          error={actionError}
+          onConfirm={() => void setActive(false)}
+          onCancel={() => setConfirm(false)}
+        />
+      )}
+    </>
+  )
+}
 
 export default function AdminCustomersPage() {
+  const [state, setState] = useState<State>("all")
   const [search, setSearch] = useState("")
-  const [selected, setSelected] = useState<Customer | null>(null)
+  const [page, setPage] = useState(1)
+  const [openId, setOpenId] = useState<number | null>(null)
+  const q = useDebounced(search.trim())
 
-  const filtered = DEMO_CUSTOMERS.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase()) ||
-    c.phone.includes(search)
+  const load = useCallback(
+    () => adminGetCustomers({ page, q, state: state === "all" ? "" : state }),
+    [page, q, state],
   )
+  const { data, loading, error, reload } = useLoader(load)
+  const customers = data?.results ?? []
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Foydalanuvchilar</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">{DEMO_CUSTOMERS.length} ta foydalanuvchi</p>
+      <PageHeader title="Mijozlar" description={data ? `${data.count} ta mijoz` : "Yuklanmoqda…"} />
+      <ErrorBanner message={error} onRetry={reload} />
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <FilterTabs options={STATES} value={state} onChange={(next) => { setState(next); setPage(1) }} label="Holat bo'yicha filtr" />
+        <SearchInput value={search} onChange={(next) => { setSearch(next); setPage(1) }} label="Mijozlarni qidirish" placeholder="Ism, email yoki telefon" />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: "Jami foydalanuvchilar", value: DEMO_CUSTOMERS.length, color: "text-blue-600" },
-          { label: "Faol foydalanuvchilar", value: DEMO_CUSTOMERS.filter(c => c.status === "active").length, color: "text-green-600" },
-          { label: "O'rtacha buyurtma", value: (DEMO_CUSTOMERS.reduce((s, c) => s + c.orders, 0) / DEMO_CUSTOMERS.length).toFixed(1), color: "text-purple-600" },
-          { label: "Jami daromad", value: `$${DEMO_CUSTOMERS.reduce((s, c) => s + c.totalSpent, 0).toLocaleString()}`, color: "text-orange-600" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-2xl border border-border bg-card p-4">
-            <p className={cn("text-2xl font-bold", color)}>{value}</p>
-            <p className="text-xs text-muted-foreground mt-1">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Ism, email yoki telefon..."
-          className="w-full rounded-xl border border-border bg-card pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
-        />
-      </div>
-
-      {/* Table */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      <Panel className="overflow-hidden" aria-busy={loading}>
+        <div className="relative overflow-x-auto">
+          <table className={cn("w-full text-sm", loading && data && "opacity-60 transition-opacity")}>
             <thead>
-              <tr className="border-b border-border bg-secondary/50">
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground">Foydalanuvchi</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground hidden md:table-cell">Telefon</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground hidden sm:table-cell">Buyurtmalar</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground hidden lg:table-cell">Jami xarid</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                <th className="text-right py-3 px-4 font-medium text-muted-foreground">Amal</th>
+              <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <th scope="col" className="px-4 py-3 font-medium">Mijoz</th>
+                <th scope="col" className="hidden px-4 py-3 font-medium md:table-cell">Telefon</th>
+                <th scope="col" className="hidden px-4 py-3 font-medium lg:table-cell">Ro&apos;yxatdan o&apos;tgan</th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">Buyurtmalar</th>
+                <th scope="col" className="hidden px-4 py-3 text-right font-medium sm:table-cell">Jami xarid</th>
+                <th scope="col" className="px-4 py-3 font-medium">Holat</th>
+                <th scope="col" className="px-4 py-3"><span className="sr-only">Amal</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map(customer => (
-                <tr key={customer.id} className="hover:bg-secondary/30 transition-colors">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-full bg-gradient-to-br from-secondary to-border flex items-center justify-center shrink-0 text-sm font-bold">
-                        {customer.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="font-medium">{customer.name}</p>
-                        <p className="text-xs text-muted-foreground">{customer.email}</p>
-                      </div>
-                    </div>
+              {!data && loading ? <SkeletonRows cols={7} /> : customers.map((customer) => (
+                <tr key={customer.id} className="transition-colors hover:bg-secondary/40">
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{fullName(customer)}</p>
+                    <p className="text-xs text-muted-foreground">{customer.email || "—"}</p>
                   </td>
-                  <td className="py-3 px-4 hidden md:table-cell text-muted-foreground text-xs font-mono">{customer.phone}</td>
-                  <td className="py-3 px-4 hidden sm:table-cell">
-                    <span className="flex items-center gap-1.5 text-sm">
-                      <ShoppingCart className="h-3.5 w-3.5 text-muted-foreground" />
-                      {customer.orders}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 hidden lg:table-cell font-semibold">${customer.totalSpent.toLocaleString()}</td>
-                  <td className="py-3 px-4">
+                  <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{customer.phone_number || "—"}</td>
+                  <td className="hidden px-4 py-3 text-muted-foreground lg:table-cell">{formatDate(customer.date_joined)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{customer.orders_count}</td>
+                  <td className="hidden px-4 py-3 text-right font-semibold tabular-nums sm:table-cell">{formatPrice(customer.total_spent)}</td>
+                  <td className="px-4 py-3">
                     <span className={cn(
-                      "rounded-full px-2.5 py-1 text-xs font-medium",
-                      customer.status === "active" ? "bg-green-100 text-green-700" : "bg-secondary text-muted-foreground"
+                      "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+                      customer.is_active ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200",
                     )}>
-                      {customer.status === "active" ? "Faol" : "Nofaol"}
+                      {customer.is_active ? "Faol" : "Bloklangan"}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-right">
-                    <button
-                      onClick={() => setSelected(customer)}
-                      className="p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
-                    >
-                      <User className="h-4 w-4" />
+                  <td className="px-4 py-3 text-right">
+                    <button type="button" onClick={() => setOpenId(customer.id)} aria-label={`${fullName(customer)} — batafsil`} className={buttonClass.icon}>
+                      <Eye className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </td>
                 </tr>
@@ -125,47 +190,13 @@ export default function AdminCustomersPage() {
             </tbody>
           </table>
         </div>
-      </div>
+        {data && customers.length === 0 && (
+          <EmptyState icon={Users} title="Mijoz topilmadi" hint={q || state !== "all" ? "Qidiruv yoki filtrni o'zgartirib ko'ring." : "Ro'yxatdan o'tgan mijozlar shu yerda ko'rinadi."} />
+        )}
+        {data && <Pagination page={data.page} pages={data.pages} count={data.count} onPage={setPage} noun="ta mijoz" />}
+      </Panel>
 
-      {/* Detail Modal */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSelected(null)} />
-          <div className="relative z-10 w-full max-w-sm bg-card rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-6 text-center border-b border-border">
-              <div className="h-16 w-16 rounded-full bg-gradient-to-br from-secondary to-border flex items-center justify-center mx-auto text-2xl font-bold mb-3">
-                {selected.name.charAt(0)}
-              </div>
-              <h2 className="font-semibold">{selected.name}</h2>
-              <p className="text-sm text-muted-foreground">{selected.email}</p>
-            </div>
-            <div className="p-5 space-y-3">
-              {[
-                { icon: Phone, label: "Telefon", value: selected.phone },
-                { icon: ShoppingCart, label: "Buyurtmalar", value: `${selected.orders} ta` },
-                { icon: Mail, label: "A'zo bo'lgan", value: selected.joinDate },
-              ].map(({ icon: Icon, label, value }) => (
-                <div key={label} className="flex items-center gap-3 rounded-xl bg-secondary p-3">
-                  <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="text-sm font-medium">{value}</p>
-                  </div>
-                </div>
-              ))}
-              <div className="rounded-xl bg-foreground text-background p-3 text-center">
-                <p className="text-xs opacity-70">Jami xarid qilingan summa</p>
-                <p className="text-xl font-bold mt-0.5">${selected.totalSpent.toLocaleString()}</p>
-              </div>
-            </div>
-            <div className="px-5 pb-5">
-              <button onClick={() => setSelected(null)} className="w-full rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-secondary transition-colors">
-                Yopish
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {openId !== null && <CustomerDetail customerId={openId} onClose={() => setOpenId(null)} onChanged={reload} />}
     </div>
   )
 }

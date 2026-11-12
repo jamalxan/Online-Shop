@@ -7,38 +7,45 @@ import { Footer } from "@/components/layout/footer"
 import { Button } from "@/components/ui/button"
 import { Heart, ShoppingBag, Trash2, ArrowRight, ChevronRight } from "lucide-react"
 import { useStore } from "@/lib/store-context"
+import { formatPrice } from "@/lib/utils"
 
 export default function WishlistPage() {
   const { wishlist, removeFromWishlist, addToCart } = useStore()
 
+  // sequential, so every removal sees the previous one applied
+  async function clearAll() {
+    if (!window.confirm("Sevimlilar ro'yxati tozalansinmi?")) return
+    for (const item of [...wishlist]) await removeFromWishlist(item.id)
+  }
+
   return (
       <>
         <Header />
-        <main className="min-h-screen bg-background pt-24 pb-20">
+        <main id="main-content" className="min-h-screen bg-background pt-24 pb-20">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-8">
-              <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
+              <Link href="/" className="hover:text-foreground transition-colors">Bosh sahifa</Link>
               <ChevronRight className="h-4 w-4" />
-              <span className="text-foreground">Wishlist</span>
+              <span className="text-foreground" aria-current="page">Sevimlilar</span>
             </nav>
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
               <div>
-                <h1 className="font-serif text-3xl sm:text-4xl">My Wishlist</h1>
+                <h1 className="font-serif text-3xl sm:text-4xl">Sevimlilar</h1>
                 <p className="mt-2 text-muted-foreground">
-                  {wishlist.length} {wishlist.length === 1 ? "item" : "items"} saved
+                  {wishlist.length} ta mahsulot saqlangan
                 </p>
               </div>
               {wishlist.length > 0 && (
                   <Button
                       variant="outline"
-                      onClick={() => wishlist.forEach((item) => removeFromWishlist(item.id))}
+                      onClick={() => void clearAll()}
                       className="rounded-xl"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Clear All
+                    Tozalash
                   </Button>
               )}
             </div>
@@ -48,13 +55,13 @@ export default function WishlistPage() {
                   <div className="flex h-24 w-24 items-center justify-center rounded-full bg-secondary">
                     <Heart className="h-12 w-12 text-muted-foreground" />
                   </div>
-                  <h2 className="mt-6 font-serif text-2xl">Your wishlist is empty</h2>
+                  <h2 className="mt-6 font-serif text-2xl">Sevimlilar ro'yxati bo'sh</h2>
                   <p className="mt-2 max-w-md text-muted-foreground">
-                    Start adding items you love by clicking the heart icon on any product
+                    Yoqqan mahsulotdagi yurak belgisini bosib, uni shu yerga saqlang
                   </p>
                   <Button asChild className="mt-8 rounded-xl" size="lg">
-                    <Link href="/">
-                      Start Shopping
+                    <Link href="/products">
+                      Xaridni boshlash
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
@@ -68,15 +75,17 @@ export default function WishlistPage() {
                           <Link href={`/product/${item.id}`}>
                             <Image
                                 src={item.image || "/placeholder.jpg"}
-                                alt={item.name}
+                                alt=""
                                 fill
+                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                                 className="object-cover transition-transform duration-500 group-hover:scale-105"
-                                unoptimized
                             />
                           </Link>
                           {/* Remove */}
                           <button
-                              onClick={() => removeFromWishlist(item.id)}
+                              type="button"
+                              aria-label={`${item.name} — sevimlilardan o'chirish`}
+                              onClick={() => void removeFromWishlist(item.id)}
                               className="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-background/90 backdrop-blur-sm text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-lg"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -94,19 +103,20 @@ export default function WishlistPage() {
                             </h3>
                           </Link>
                           <div className="mt-2 flex items-baseline gap-2">
-                            <span className="text-lg font-semibold">${item.price.toLocaleString()}</span>
+                            <span className="text-lg font-semibold">{formatPrice(item.price)}</span>
                             {item.originalPrice && (
                                 <span className="text-sm text-muted-foreground line-through">
-                          ${item.originalPrice.toLocaleString()}
+                          {formatPrice(item.originalPrice)}
                         </span>
                             )}
                           </div>
                           <Button
                               className="mt-4 w-full rounded-xl"
-                              onClick={() => addToCart(item)}
+                              disabled={item.quantity !== undefined && item.quantity <= 0}
+                              onClick={() => void addToCart(item)}
                           >
                             <ShoppingBag className="mr-2 h-4 w-4" />
-                            Add to Cart
+                            Savatga
                           </Button>
                         </div>
                       </div>

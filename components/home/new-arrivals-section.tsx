@@ -22,32 +22,34 @@ export function NewArrivalsSection({ products }: Props) {
     })
   }
 
+  if (products.length === 0) return null
+
   return (
       <section className="py-20 lg:py-32 bg-background overflow-hidden">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
             <div>
               <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                Just Arrived
+                Yangi
               </p>
               <h2 className="mt-2 font-serif text-3xl sm:text-4xl lg:text-5xl text-balance">
-                New Arrivals
+                Yangi kelganlar
               </h2>
             </div>
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex items-center gap-2">
-                <Button variant="outline" size="icon" className="rounded-full" onClick={() => scroll("left")}>
-                  <ChevronLeft className="h-4 w-4" />
+                <Button variant="outline" size="icon" className="rounded-full" onClick={() => scroll("left")} aria-label="Chapga surish">
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 </Button>
-                <Button variant="outline" size="icon" className="rounded-full" onClick={() => scroll("right")}>
-                  <ChevronRight className="h-4 w-4" />
+                <Button variant="outline" size="icon" className="rounded-full" onClick={() => scroll("right")} aria-label="O'ngga surish">
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
               <Link
                   href="/products"
                   className="group flex items-center gap-2 text-sm font-medium hover:text-muted-foreground transition-colors"
               >
-                View All
+                Barchasi
                 <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </Link>
             </div>
@@ -67,6 +69,8 @@ export function NewArrivalsSection({ products }: Props) {
                       price={product.price}
                       originalPrice={product.originalPrice}
                       image={product.image}
+                      quantity={product.quantity}
+                      sizes="280px"
                       isNew
                   />
                 </div>

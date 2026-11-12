@@ -1,374 +1,200 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
+import { CheckCircle, Clock, Instagram, Loader2, Mail, MapPin, Phone, Send } from "lucide-react"
 import { Header } from "@/components/layout/header"
 import { Footer } from "@/components/layout/footer"
 import { Button } from "@/components/ui/button"
-import { Phone, Mail, MapPin, Clock, Send, Instagram, MessageCircle, CheckCircle } from "lucide-react"
+import { sendContactMessage } from "@/lib/api"
+import { useStore } from "@/lib/store-context"
 
-const contactInfo = [
-  {
-    icon: Phone,
-    title: "Phone",
-    details: ["+1 (234) 567-890", "+1 (234) 567-891"],
-    action: "tel:+1234567890",
-    actionLabel: "Call Now",
-  },
-  {
-    icon: Mail,
-    title: "Email",
-    details: ["hello@apexstore.com", "support@apexstore.com"],
-    action: "mailto:hello@apexstore.com",
-    actionLabel: "Send Email",
-  },
-  {
-    icon: MapPin,
-    title: "Address",
-    details: ["123 Premium Avenue", "Tech City, TC 12345"],
-    action: "https://maps.google.com",
-    actionLabel: "Get Directions",
-  },
-  {
-    icon: Clock,
-    title: "Working Hours",
-    details: ["Mon - Sat: 10:00 AM - 9:00 PM", "Sunday: 11:00 AM - 7:00 PM"],
-  },
-]
+const SUBJECTS = ["Mahsulot haqida savol", "Buyurtma holati", "Yetkazib berish", "Kafolat va qaytarish", "Boshqa"]
 
-const socialLinks = [
-  { icon: Instagram, name: "Instagram", handle: "@apexstore", href: "https://instagram.com" },
-  { icon: Send, name: "Telegram", handle: "@apexstore", href: "https://telegram.org" },
-  { icon: MessageCircle, name: "WhatsApp", handle: "+1234567890", href: "https://wa.me/1234567890" },
-]
+const fieldClass =
+  "mt-2 w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+  "transition-shadow aria-[invalid=true]:border-red-500"
+
+type Errors = Partial<Record<"name" | "contact" | "message", string>>
+
+/** Links are rendered as href — http(s) only, whatever the API returned. */
+function safeLink(url: string): boolean {
+  return /^https?:\/\//i.test(url)
+}
 
 export default function ContactPage() {
-  const [formSubmitted, setFormSubmitted] = useState(false)
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    subject: "",
-    message: "",
-  })
+  const { store } = useStore()
+  const [form, setForm] = useState({ name: "", email: "", phone: "", subject: "", message: "", website: "" })
+  const [errors, setErrors] = useState<Errors>({})
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle")
+  const [serverError, setServerError] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Simulate form submission
-    setFormSubmitted(true)
+  const change = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setForm((prev) => ({ ...prev, [event.target.name]: event.target.value }))
+    setServerError("")
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value })
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (status === "sending") return
+    const next: Errors = {}
+    if (form.name.trim().length < 2) next.name = "Ismingizni kiriting"
+    if (!form.email.trim() && !form.phone.trim()) next.contact = "Javob berishimiz uchun email yoki telefon kiriting"
+    else if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) next.contact = "Email manzil noto'g'ri"
+    if (form.message.trim().length < 5) next.message = "Xabar matnini yozing (kamida 5 ta belgi)"
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
+
+    setStatus("sending")
+    // Stored on the server (POST /api/contact/) — the shop reads it in the admin panel.
+    const res = await sendContactMessage({
+      name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(),
+      subject: form.subject, message: form.message.trim(), website: form.website,
+    })
+    if (!res.ok) {
+      setStatus("idle")
+      setServerError(res.error)
+      return
+    }
+    setStatus("sent")
   }
+
+  const contacts = [
+    store.phone && { icon: Phone, title: "Telefon", lines: [store.phone, store.phone_secondary].filter(Boolean), href: `tel:${store.phone.replace(/[^\d+]/g, "")}`, action: "Qo'ng'iroq qilish" },
+    store.email && { icon: Mail, title: "Email", lines: [store.email], href: `mailto:${store.email}`, action: "Xat yozish" },
+    store.address && { icon: MapPin, title: "Manzil", lines: [store.address] },
+    store.working_hours && { icon: Clock, title: "Ish vaqti", lines: [store.working_hours] },
+  ].filter((item): item is Exclude<typeof item, "" | false> => Boolean(item))
+
+  const socials = [
+    safeLink(store.telegram_url) && { icon: Send, name: "Telegram", href: store.telegram_url },
+    safeLink(store.instagram_url) && { icon: Instagram, name: "Instagram", href: store.instagram_url },
+  ].filter((item): item is Exclude<typeof item, false> => Boolean(item))
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       <Header />
-      <main className="pt-20">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden bg-gradient-to-b from-muted/50 to-background py-24 lg:py-32">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mx-auto max-w-3xl text-center">
-              <span className="inline-block rounded-full bg-foreground/5 px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Get in Touch
-              </span>
-              <h1 className="mt-6 font-serif text-4xl sm:text-5xl lg:text-6xl text-balance">
-                We&apos;re Here to Help
-              </h1>
-              <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-                Have questions about our products or need expert consultation? 
-                Our team is ready to assist you with all your Apple needs.
-              </p>
-            </div>
-          </div>
-          {/* Background Gradient */}
-          <div className="absolute inset-0 -z-10 overflow-hidden">
-            <div className="absolute left-1/2 top-0 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-gradient-to-br from-primary/5 to-transparent blur-3xl" />
+      <main id="main-content" className="flex-1">
+        <section className="bg-secondary/50 py-16 sm:py-24">
+          <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
+            <h1 className="font-serif text-4xl text-balance sm:text-5xl lg:text-6xl">Biz bilan bog&apos;laning</h1>
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+              Mahsulot, buyurtma yoki yetkazib berish bo&apos;yicha savolingiz bormi? Yozing — ish vaqtida javob beramiz.
+            </p>
           </div>
         </section>
 
-        {/* Contact Info Cards */}
-        <section className="py-16">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {contactInfo.map((item) => (
-                <div
-                  key={item.title}
-                  className="group rounded-2xl border border-border bg-card p-6 transition-all hover:shadow-lg hover:border-foreground/20"
-                >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground/5 transition-colors group-hover:bg-foreground group-hover:text-background">
-                    <item.icon className="h-5 w-5" />
+        {contacts.length > 0 && (
+          <section className="py-12" aria-label="Aloqa ma'lumotlari">
+            <ul className="mx-auto grid max-w-7xl gap-6 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
+              {contacts.map((item) => (
+                <li key={item.title} className="rounded-2xl border border-border bg-card p-6">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary">
+                    <item.icon className="h-5 w-5" aria-hidden="true" />
                   </div>
-                  <h3 className="mt-4 font-semibold">{item.title}</h3>
-                  <div className="mt-2 space-y-1">
-                    {item.details.map((detail, i) => (
-                      <p key={i} className="text-sm text-muted-foreground">{detail}</p>
-                    ))}
-                  </div>
-                  {item.action && (
-                    <a
-                      href={item.action}
-                      className="mt-4 inline-flex items-center text-sm font-medium hover:underline"
-                    >
-                      {item.actionLabel}
-                    </a>
+                  <h2 className="mt-4 font-semibold">{item.title}</h2>
+                  {item.lines.map((line) => <p key={line} className="mt-1 break-words text-sm text-muted-foreground">{line}</p>)}
+                  {"href" in item && item.href && (
+                    <a href={item.href} className="mt-3 inline-block text-sm font-medium underline underline-offset-4 hover:no-underline">{item.action}</a>
                   )}
-                </div>
+                </li>
               ))}
-            </div>
-          </div>
-        </section>
+            </ul>
+          </section>
+        )}
 
-        {/* Contact Form & Social */}
-        <section className="py-16">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="grid gap-16 lg:grid-cols-2">
-              {/* Contact Form */}
-              <div>
-                <h2 className="font-serif text-2xl sm:text-3xl">Send Us a Message</h2>
-                <p className="mt-2 text-muted-foreground">
-                  Fill out the form below and we&apos;ll get back to you as soon as possible.
-                </p>
+        <section className="py-12 sm:py-16">
+          <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-3 lg:px-8">
+            <div className="lg:col-span-2">
+              <h2 className="font-serif text-2xl sm:text-3xl">Xabar yuborish</h2>
+              <p className="mt-2 text-muted-foreground">Email yoki telefondan kamida bittasini qoldiring — shu orqali javob beramiz.</p>
 
-                {formSubmitted ? (
-                  <div className="mt-8 rounded-2xl border border-green-200 bg-green-50 p-8 text-center dark:border-green-900 dark:bg-green-950">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-                      <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
-                    </div>
-                    <h3 className="mt-4 text-xl font-semibold text-green-900 dark:text-green-100">
-                      Message Sent Successfully
-                    </h3>
-                    <p className="mt-2 text-green-700 dark:text-green-300">
-                      Thank you for reaching out! We&apos;ll respond within 24 hours.
-                    </p>
-                    <Button
-                      className="mt-6"
-                      variant="outline"
-                      onClick={() => {
-                        setFormSubmitted(false)
-                        setFormData({ name: "", email: "", phone: "", subject: "", message: "" })
-                      }}
-                    >
-                      Send Another Message
-                    </Button>
+              {status === "sent" ? (
+                <div role="status" className="mt-8 rounded-2xl border border-green-300 bg-green-50 p-8 text-center dark:border-green-900 dark:bg-green-950">
+                  <CheckCircle className="mx-auto h-12 w-12 text-green-700 dark:text-green-400" aria-hidden="true" />
+                  <h3 className="mt-4 text-xl font-semibold text-green-900 dark:text-green-100">Xabaringiz qabul qilindi</h3>
+                  <p className="mt-2 text-green-800 dark:text-green-300">Ish vaqtida siz qoldirgan aloqa orqali javob beramiz.</p>
+                  <Button asChild variant="outline" className="mt-6 rounded-xl"><Link href="/products">Xaridni davom ettirish</Link></Button>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="mt-8 space-y-6" noValidate>
+                  {/* Honeypot: hidden from people and assistive tech; bots fill it and are dropped by the server. */}
+                  <div className="hidden" aria-hidden="true">
+                    <label htmlFor="website">Website</label>
+                    <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" value={form.website} onChange={change} />
                   </div>
-                ) : (
-                  <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-                    <div className="grid gap-6 sm:grid-cols-2">
-                      <div>
-                        <label htmlFor="name" className="block text-sm font-medium">
-                          Full Name
-                        </label>
-                        <input
-                          type="text"
-                          id="name"
-                          name="name"
-                          value={formData.name}
-                          onChange={handleChange}
-                          required
-                          className="mt-2 w-full rounded-lg border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                          placeholder="John Doe"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="email" className="block text-sm font-medium">
-                          Email Address
-                        </label>
-                        <input
-                          type="email"
-                          id="email"
-                          name="email"
-                          value={formData.email}
-                          onChange={handleChange}
-                          required
-                          className="mt-2 w-full rounded-lg border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                          placeholder="john@example.com"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid gap-6 sm:grid-cols-2">
-                      <div>
-                        <label htmlFor="phone" className="block text-sm font-medium">
-                          Phone Number
-                        </label>
-                        <input
-                          type="tel"
-                          id="phone"
-                          name="phone"
-                          value={formData.phone}
-                          onChange={handleChange}
-                          className="mt-2 w-full rounded-lg border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                          placeholder="+1 (234) 567-890"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="subject" className="block text-sm font-medium">
-                          Subject
-                        </label>
-                        <select
-                          id="subject"
-                          name="subject"
-                          value={formData.subject}
-                          onChange={handleChange}
-                          required
-                          className="mt-2 w-full rounded-lg border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                        >
-                          <option value="">Select a subject</option>
-                          <option value="product-inquiry">Product Inquiry</option>
-                          <option value="order-status">Order Status</option>
-                          <option value="warranty">Warranty Support</option>
-                          <option value="returns">Returns & Refunds</option>
-                          <option value="consultation">Expert Consultation</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </div>
+
+                  <div className="grid gap-6 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="name" className="block text-sm font-medium">Ismingiz <span aria-hidden="true">*</span></label>
+                      <input id="name" name="name" type="text" autoComplete="name" required maxLength={120} value={form.name} onChange={change}
+                        aria-invalid={errors.name ? true : undefined} aria-describedby={errors.name ? "name-error" : undefined} className={fieldClass} />
+                      {errors.name && <p id="name-error" role="alert" className="mt-1.5 text-sm text-red-700">{errors.name}</p>}
                     </div>
                     <div>
-                      <label htmlFor="message" className="block text-sm font-medium">
-                        Message
-                      </label>
-                      <textarea
-                        id="message"
-                        name="message"
-                        value={formData.message}
-                        onChange={handleChange}
-                        required
-                        rows={5}
-                        className="mt-2 w-full resize-none rounded-lg border border-border bg-card px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                        placeholder="Tell us how we can help you..."
-                      />
+                      <label htmlFor="subject" className="block text-sm font-medium">Mavzu</label>
+                      <select id="subject" name="subject" value={form.subject} onChange={change} className={fieldClass}>
+                        <option value="">Tanlang</option>
+                        {SUBJECTS.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+                      </select>
                     </div>
-                    <Button type="submit" size="lg" className="w-full sm:w-auto">
-                      Send Message
-                    </Button>
-                  </form>
-                )}
-              </div>
-
-              {/* Social & Quick Contact */}
-              <div className="space-y-8">
-                {/* Quick Contact */}
-                <div className="rounded-2xl border border-border bg-card p-8">
-                  <h3 className="font-serif text-xl">Need Immediate Help?</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Our support team is available during working hours for instant assistance.
-                  </p>
-                  <div className="mt-6 space-y-4">
-                    <a
-                      href="tel:+1234567890"
-                      className="flex items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted"
-                    >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400">
-                        <Phone className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Call Us Now</p>
-                        <p className="text-sm text-muted-foreground">+1 (234) 567-890</p>
-                      </div>
-                    </a>
-                    <a
-                      href="https://wa.me/1234567890"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted"
-                    >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400">
-                        <MessageCircle className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="font-medium">WhatsApp</p>
-                        <p className="text-sm text-muted-foreground">Start a conversation</p>
-                      </div>
-                    </a>
+                    <div>
+                      <label htmlFor="phone" className="block text-sm font-medium">Telefon</label>
+                      <input id="phone" name="phone" type="tel" autoComplete="tel" inputMode="tel" placeholder="+998 90 123 45 67" maxLength={20} value={form.phone} onChange={change}
+                        aria-invalid={errors.contact ? true : undefined} aria-describedby={errors.contact ? "contact-error" : undefined} className={fieldClass} />
+                    </div>
+                    <div>
+                      <label htmlFor="email" className="block text-sm font-medium">Email</label>
+                      <input id="email" name="email" type="email" autoComplete="email" inputMode="email" placeholder="ism@example.com" maxLength={255} value={form.email} onChange={change}
+                        aria-invalid={errors.contact ? true : undefined} aria-describedby={errors.contact ? "contact-error" : undefined} className={fieldClass} />
+                    </div>
                   </div>
-                </div>
+                  {errors.contact && <p id="contact-error" role="alert" className="-mt-3 text-sm text-red-700">{errors.contact}</p>}
 
-                {/* Social Links */}
-                <div className="rounded-2xl border border-border bg-card p-8">
-                  <h3 className="font-serif text-xl">Connect With Us</h3>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Follow us for updates, offers, and Apple news.
-                  </p>
-                  <div className="mt-6 space-y-3">
-                    {socialLinks.map((social) => (
-                      <a
-                        key={social.name}
-                        href={social.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-muted"
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground/5">
-                          <social.icon className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{social.name}</p>
-                          <p className="text-sm text-muted-foreground">{social.handle}</p>
-                        </div>
-                      </a>
+                  <div>
+                    <label htmlFor="message" className="block text-sm font-medium">Xabar <span aria-hidden="true">*</span></label>
+                    <textarea id="message" name="message" required rows={6} maxLength={3000} value={form.message} onChange={change}
+                      aria-invalid={errors.message ? true : undefined} aria-describedby={errors.message ? "message-error" : undefined} className={`${fieldClass} resize-none`} />
+                    {errors.message && <p id="message-error" role="alert" className="mt-1.5 text-sm text-red-700">{errors.message}</p>}
+                  </div>
+
+                  {serverError && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{serverError}</p>}
+
+                  <Button type="submit" size="lg" className="rounded-xl px-8" disabled={status === "sending"}>
+                    {status === "sending"
+                      ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />Yuborilmoqda</>
+                      : <><Send className="mr-2 h-4 w-4" aria-hidden="true" />Yuborish</>}
+                  </Button>
+                </form>
+              )}
+            </div>
+
+            <aside className="space-y-6">
+              {socials.length > 0 && (
+                <div className="rounded-2xl border border-border bg-card p-6">
+                  <h2 className="font-serif text-xl">Ijtimoiy tarmoqlar</h2>
+                  <ul className="mt-4 space-y-3">
+                    {socials.map((social) => (
+                      <li key={social.name}>
+                        <a href={social.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 rounded-xl bg-secondary p-4 transition-colors hover:bg-secondary/70">
+                          <social.icon className="h-5 w-5" aria-hidden="true" />
+                          <span className="font-medium">{social.name}</span>
+                        </a>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
+              )}
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <h2 className="font-serif text-xl">Tez-tez so&apos;raladigan savollar</h2>
+                <p className="mt-2 text-sm text-muted-foreground">Yetkazib berish, to&apos;lov va kafolat haqidagi javoblar bir joyda.</p>
+                <Button asChild variant="outline" className="mt-4 rounded-xl"><Link href="/faq">Savol-javoblarni ochish</Link></Button>
               </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Map Section */}
-        <section className="py-16">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="overflow-hidden rounded-2xl border border-border">
-              <div className="relative h-[400px] bg-muted">
-                {/* Placeholder for map - in production, integrate with Google Maps or similar */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <MapPin className="mx-auto h-12 w-12 text-muted-foreground" />
-                    <p className="mt-4 text-lg font-medium">APEX Store</p>
-                    <p className="text-sm text-muted-foreground">123 Premium Avenue, Tech City</p>
-                    <a
-                      href="https://maps.google.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-4 inline-flex items-center gap-2 text-sm font-medium hover:underline"
-                    >
-                      Open in Google Maps
-                    </a>
-                  </div>
-                </div>
-                {/* Background pattern */}
-                <div className="absolute inset-0 opacity-30" style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.2'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-                }} />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* CTA Section */}
-        <section className="bg-foreground py-16 text-background">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
-              <div>
-                <h2 className="font-serif text-2xl sm:text-3xl">
-                  Visit Our Store
-                </h2>
-                <p className="mt-2 text-background/70">
-                  Experience our products in person with expert guidance.
-                </p>
-              </div>
-              <a
-                href="https://maps.google.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-lg bg-background px-8 py-3 text-sm font-medium text-foreground transition-colors hover:bg-background/90"
-              >
-                Get Directions
-              </a>
-            </div>
+            </aside>
           </div>
         </section>
       </main>
       <Footer />
-    </>
+    </div>
   )
 }

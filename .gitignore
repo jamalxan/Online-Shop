@@ -9,6 +9,7 @@ venv/
 *.sqlite3
 media/
 Media/
+private_media/
 staticfiles/
 
 # Next.js
@@ -36,3 +37,7 @@ home_err.html
 # IDE
 .idea/
 .vscode/
+
+# Firebase service account (maxfiy)
+serviceAccountKey.json
+*serviceAccount*.json

@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react"
 
 interface CategoryHeaderProps {
   name: string
-  description: string
+  description?: string
   banner: string
   productCount: number
 }
@@ -12,12 +12,13 @@ interface CategoryHeaderProps {
 export function CategoryHeader({ name, description, banner, productCount }: CategoryHeaderProps) {
   return (
     <section className="relative">
-      {/* Banner Image */}
+      {/* Banner Image (decorative, LCP element of the page) */}
       <div className="relative h-64 sm:h-80 lg:h-96 overflow-hidden">
         <Image
           src={banner}
-          alt={name}
+          alt=""
           fill
+          sizes="100vw"
           className="object-cover"
           priority
         />
@@ -28,12 +29,12 @@ export function CategoryHeader({ name, description, banner, productCount }: Cate
       <div className="absolute inset-0 flex flex-col justify-end">
         <div className="mx-auto w-full max-w-7xl px-4 pb-8 sm:px-6 lg:px-8 lg:pb-12">
           {/* Breadcrumb */}
-          <nav className="flex items-center gap-2 text-sm text-background/70 mb-4">
+          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-background/70 mb-4">
             <Link href="/" className="hover:text-background transition-colors">
-              Home
+              Bosh sahifa
             </Link>
-            <ChevronRight className="h-4 w-4" />
-            <span className="text-background">{name}</span>
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            <span className="text-background" aria-current="page">{name}</span>
           </nav>
 
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -41,12 +42,14 @@ export function CategoryHeader({ name, description, banner, productCount }: Cate
               <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl text-background">
                 {name}
               </h1>
-              <p className="mt-2 max-w-xl text-background/80">
-                {description}
-              </p>
+              {description && (
+                <p className="mt-2 max-w-xl text-background/80">
+                  {description}
+                </p>
+              )}
             </div>
             <p className="text-sm text-background/70">
-              {productCount} {productCount === 1 ? "Product" : "Products"}
+              {productCount} ta mahsulot
             </p>
           </div>
         </div>

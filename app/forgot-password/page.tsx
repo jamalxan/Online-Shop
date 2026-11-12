@@ -8,7 +8,7 @@ import { Footer } from "@/components/layout/footer"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, Mail, Lock, Eye, EyeOff, CheckCircle, ArrowLeft } from "lucide-react"
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { forgotPassword, forgotPasswordVerify, resetPassword } from "@/lib/api"
 
 type Step = "email" | "otp" | "password" | "success"
 
@@ -29,9 +29,11 @@ export default function ForgotPasswordPage() {
     // Timer
     const [timeLeft, setTimeLeft] = useState(60)
     const [canResend, setCanResend] = useState(false)
-    const timerRef = useRef<NodeJS.Timeout | null>(null)
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
     const otpRefs = useRef<(HTMLInputElement | null)[]>([])
+    // bumping this restarts the countdown after a successful resend
+    const [resendCount, setResendCount] = useState(0)
 
     // Start 60s timer when OTP step begins
     useEffect(() => {
@@ -41,7 +43,7 @@ export default function ForgotPasswordPage() {
             timerRef.current = setInterval(() => {
                 setTimeLeft((prev) => {
                     if (prev <= 1) {
-                        clearInterval(timerRef.current!)
+                        if (timerRef.current) clearInterval(timerRef.current)
                         setCanResend(true)
                         return 0
                     }
@@ -52,97 +54,60 @@ export default function ForgotPasswordPage() {
         return () => {
             if (timerRef.current) clearInterval(timerRef.current)
         }
-    }, [step])
+    }, [step, resendCount])
 
     // ── Step 1: Send email ───────────────────────────────────
     async function handleSendEmail(e: React.FormEvent) {
         e.preventDefault()
+        if (loading) return
         setError("")
         setLoading(true)
-        try {
-            const res = await fetch(`${BASE_URL}/api/auth/forgot-password/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email }),
-            })
-            if (!res.ok) {
-                const data = await res.json()
-                throw new Error(data?.email?.[0] || data?.detail || "Xatolik yuz berdi")
-            }
-            setStep("otp")
-        } catch (err: any) {
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
+        const res = await forgotPassword(email.trim())
+        setLoading(false)
+        if (!res.ok) { setError(res.error); return }
+        setOtp(["", "", "", "", "", ""])
+        setStep("otp")
     }
 
     // ── Step 2: Verify OTP ───────────────────────────────────
     async function handleVerifyOtp(e: React.FormEvent) {
         e.preventDefault()
+        if (loading) return
         const code = otp.join("")
         if (code.length < 6) { setError("Kodni to'liq kiriting"); return }
         setError("")
         setLoading(true)
-        try {
-            const res = await fetch(`${BASE_URL}/api/auth/forgot-password-verify/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, code }),
-            })
-            if (!res.ok) {
-                const data = await res.json()
-                throw new Error(data?.detail || data?.non_field_errors?.[0] || "Kod noto'g'ri")
-            }
-            setStep("password")
-        } catch (err: any) {
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
+        const res = await forgotPasswordVerify(email.trim(), code)
+        setLoading(false)
+        if (!res.ok) { setError(res.error); return }
+        setStep("password")
     }
 
     // ── Step 3: Reset password ───────────────────────────────
     async function handleResetPassword(e: React.FormEvent) {
         e.preventDefault()
+        if (loading) return
         if (newPassword !== confirmPassword) { setError("Parollar mos kelmadi"); return }
         if (newPassword.length < 8) { setError("Parol kamida 8 ta belgidan iborat bo'lishi kerak"); return }
         setError("")
         setLoading(true)
-        try {
-            const res = await fetch(`${BASE_URL}/api/auth/reset-password/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, new_password: newPassword, confirm_password: confirmPassword }),
-            })
-            if (!res.ok) {
-                const data = await res.json()
-                throw new Error(data?.detail || data?.non_field_errors?.[0] || "Xatolik yuz berdi")
-            }
-            setStep("success")
-        } catch (err: any) {
-            setError(err.message)
-        } finally {
-            setLoading(false)
-        }
+        const res = await resetPassword(email.trim(), newPassword, confirmPassword)
+        setLoading(false)
+        if (!res.ok) { setError(res.error); return }
+        setStep("success")
     }
 
     // ── Resend OTP ───────────────────────────────────────────
     async function handleResend() {
-        if (!canResend) return
+        if (!canResend || loading) return
         setError("")
+        setLoading(true)
+        const res = await forgotPassword(email.trim())
+        setLoading(false)
+        // a rate-limited / failed resend is shown, not silently treated as sent
+        if (!res.ok) { setError(res.error); return }
         setOtp(["", "", "", "", "", ""])
-        try {
-            await fetch(`${BASE_URL}/api/auth/forgot-password/`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email }),
-            })
-            setStep("email")
-            setTimeout(() => setStep("otp"), 50)
-        } catch {
-            setError("Qayta yuborishda xatolik")
-        }
+        setResendCount((n) => n + 1)
     }
 
     // ── OTP input handlers ───────────────────────────────────
@@ -175,16 +140,16 @@ export default function ForgotPasswordPage() {
     return (
         <>
             <Header />
-            <main className="min-h-screen bg-background pt-24 pb-20">
+            <main id="main-content" className="min-h-screen bg-background pt-24 pb-20">
                 <div className="mx-auto max-w-md px-4 sm:px-6">
 
                     {/* Breadcrumb */}
                     <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-8">
-                        <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
+                        <Link href="/" className="hover:text-foreground transition-colors">Bosh sahifa</Link>
                         <ChevronRight className="h-4 w-4" />
-                        <Link href="/account" className="hover:text-foreground transition-colors">Account</Link>
+                        <Link href="/account" className="hover:text-foreground transition-colors">Hisob</Link>
                         <ChevronRight className="h-4 w-4" />
-                        <span className="text-foreground">Forgot Password</span>
+                        <span className="text-foreground" aria-current="page">Parolni tiklash</span>
                     </nav>
 
                     <div className="rounded-2xl border border-border bg-card p-8">
@@ -222,7 +187,9 @@ export default function ForgotPasswordPage() {
                                             <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                                             <input
                                                 type="email"
-                                                placeholder="your@email.com"
+                                                aria-label="Email"
+                                                autoComplete="email"
+                                                placeholder="email@example.com"
                                                 value={email}
                                                 onChange={(e) => setEmail(e.target.value)}
                                                 className="w-full rounded-xl border border-border bg-background py-3 pl-12 pr-4 outline-none focus:ring-2 focus:ring-ring transition-all"
@@ -233,7 +200,7 @@ export default function ForgotPasswordPage() {
                                     </div>
 
                                     {error && (
-                                        <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">{error}</p>
+                                        <p role="alert" className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">{error}</p>
                                     )}
 
                                     <Button type="submit" className="w-full rounded-xl" size="lg" disabled={loading}>
@@ -269,11 +236,13 @@ export default function ForgotPasswordPage() {
                                                 ref={(el) => { otpRefs.current[i] = el }}
                                                 type="text"
                                                 inputMode="numeric"
+                                                autoComplete={i === 0 ? "one-time-code" : "off"}
+                                                aria-label={`Kodning ${i + 1}-raqami`}
                                                 maxLength={1}
                                                 value={digit}
                                                 onChange={(e) => handleOtpChange(i, e.target.value)}
                                                 onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                                                onPaste={i === 0 ? handleOtpPaste : undefined}
+                                                onPaste={handleOtpPaste}
                                                 className="h-14 w-full rounded-xl border border-border bg-background text-center text-xl font-semibold outline-none focus:ring-2 focus:ring-ring transition-all"
                                             />
                                         ))}
@@ -284,7 +253,7 @@ export default function ForgotPasswordPage() {
                     <span className="text-muted-foreground">
                       {canResend
                           ? "Kod kelmadimi?"
-                          : <span>Kod amal qilish vaqti: <span className="font-semibold tabular-nums text-foreground">0:{String(timeLeft).padStart(2, "0")}</span></span>
+                          : <span>Qayta yuborish mumkin: <span className="font-semibold tabular-nums text-foreground">0:{String(timeLeft).padStart(2, "0")}</span></span>
                       }
                     </span>
                                         <button
@@ -298,7 +267,7 @@ export default function ForgotPasswordPage() {
                                     </div>
 
                                     {error && (
-                                        <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">{error}</p>
+                                        <p role="alert" className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">{error}</p>
                                     )}
 
                                     <Button
@@ -342,6 +311,9 @@ export default function ForgotPasswordPage() {
                                             <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                                             <input
                                                 type={showNew ? "text" : "password"}
+                                                aria-label="Yangi parol"
+                                                autoComplete="new-password"
+                                                minLength={8}
                                                 placeholder="Kamida 8 ta belgi"
                                                 value={newPassword}
                                                 onChange={(e) => setNewPassword(e.target.value)}
@@ -352,6 +324,7 @@ export default function ForgotPasswordPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => setShowNew(!showNew)}
+                                                aria-label={showNew ? "Parolni yashirish" : "Parolni ko'rsatish"}
                                                 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                                             >
                                                 {showNew ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -377,6 +350,8 @@ export default function ForgotPasswordPage() {
                                             <Lock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                                             <input
                                                 type={showConfirm ? "text" : "password"}
+                                                aria-label="Parolni tasdiqlang"
+                                                autoComplete="new-password"
                                                 placeholder="Parolni qayta kiriting"
                                                 value={confirmPassword}
                                                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -392,6 +367,7 @@ export default function ForgotPasswordPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => setShowConfirm(!showConfirm)}
+                                                aria-label={showConfirm ? "Parolni yashirish" : "Parolni ko'rsatish"}
                                                 className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                                             >
                                                 {showConfirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -408,7 +384,7 @@ export default function ForgotPasswordPage() {
                                     </div>
 
                                     {error && (
-                                        <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">{error}</p>
+                                        <p role="alert" className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-3">{error}</p>
                                     )}
 
                                     <Button
