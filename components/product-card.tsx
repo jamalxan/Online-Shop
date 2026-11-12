@@ -20,6 +20,8 @@ interface ProductCardProps {
     quantity?: number
     /** `sizes` for the image — defaults to a 2/3/4-column grid */
     sizes?: string
+    /** the card is above the fold: load its image right away instead of lazily (it is the page's LCP candidate) */
+    eager?: boolean
     className?: string
 }
 
@@ -36,6 +38,7 @@ export function ProductCard({
                                 isNew,
                                 quantity,
                                 sizes = DEFAULT_SIZES,
+                                eager = false,
                                 className,
                             }: ProductCardProps) {
     const { addToCart, addToWishlist, removeFromWishlist, isInWishlist, cart, showNotification } = useStore()
@@ -69,12 +72,15 @@ export function ProductCard({
         <div className={cn("group relative", className)}>
             {/* Image Container */}
             <div className="relative aspect-square overflow-hidden rounded-2xl bg-secondary">
-                <Link href={`/product/${id}`} tabIndex={-1} aria-hidden="true">
+                {/* positioned, so the `fill` image is laid out against the link itself (next/image requires it) */}
+                <Link href={`/product/${id}`} tabIndex={-1} aria-hidden="true" className="absolute inset-0">
                     <Image
                         src={image}
                         alt=""
                         fill
                         sizes={sizes}
+                        loading={eager ? "eager" : undefined}
+                        fetchPriority={eager ? "high" : undefined}
                         className="object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                 </Link>

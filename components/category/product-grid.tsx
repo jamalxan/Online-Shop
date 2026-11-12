@@ -73,9 +73,10 @@ export function ProductGrid({ page, sort, onSortChange, hrefForPage, pending, fi
           aria-busy={pending}
           className={cn("grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4 transition-opacity", pending && "opacity-50")}
         >
-          {products.map((product) => (
+          {products.map((product, index) => (
             <ProductCard
               key={product.id}
+              eager={index < 4} // first row: visible without scrolling
               id={product.id}
               name={product.name}
               category={product.category}
