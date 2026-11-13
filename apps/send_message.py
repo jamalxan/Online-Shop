@@ -16,7 +16,7 @@ def send_email(email: str, code, subject: str = "Tasdiqlash kodi") -> bool:
         f"Sizning kodingiz: {code}\n\n"
         f"Kod 5 daqiqa amal qiladi. Uni hech kimga bermang.\n"
         f"Agar bu so'rovni siz yubormagan bo'lsangiz, xatni e'tiborsiz qoldiring.\n\n"
-        f"APEX Store"
+        f"AppleShop"
     )
     html = f"""
         <div style="font-family: Arial, sans-serif; background:#f4f6f8; padding:20px">
@@ -29,7 +29,7 @@ def send_email(email: str, code, subject: str = "Tasdiqlash kodi") -> bool:
                     Kod 5 daqiqa amal qiladi.<br>Uni hech kimga bermang.
                 </p>
                 <hr>
-                <p style="font-size:12px; color:#aaa; text-align:center;">APEX Store</p>
+                <p style="font-size:12px; color:#aaa; text-align:center;">AppleShop</p>
             </div>
         </div>
     """

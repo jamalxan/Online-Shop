@@ -1,4 +1,4 @@
-# APEX Store — o'rnatish va ishga tushirish
+# AppleShop — o'rnatish va ishga tushirish
 
 Django REST backend (`apps/`, `OnlineShop/`) va Next.js frontend (`app/`, `components/`, `lib/`) bitta repozitoriyda.
 

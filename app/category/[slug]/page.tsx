@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!category) return { title: "Kategoriya topilmadi", robots: { index: false } }
   return {
     title: category.name,
-    description: `${category.name} — APEX Store'dagi original Apple mahsulotlari va narxlari.`,
+    description: `${category.name} — AppleShop'dagi original Apple mahsulotlari va narxlari.`,
     alternates: { canonical: category.href },
   }
 }

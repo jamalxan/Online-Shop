@@ -21,8 +21,8 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL
 export const metadata: Metadata = {
   ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
   title: {
-    default: "APEX Store | Original Apple mahsulotlari",
-    template: "%s | APEX Store",
+    default: "AppleShop | Original Apple mahsulotlari",
+    template: "%s | AppleShop",
   },
   description:
       "Original Apple mahsulotlari: iPhone, MacBook, iPad, Apple Watch, AirPods va aksessuarlar.",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: "website",
-    siteName: "APEX Store",
+    siteName: "AppleShop",
     locale: "uz_UZ",
   },
 }

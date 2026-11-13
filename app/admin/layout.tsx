@@ -171,7 +171,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Link href="/admin" className="flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-foreground">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-foreground font-serif text-lg font-bold text-background" aria-hidden="true">A</span>
             <span className="leading-tight">
-              <span className="block text-sm font-semibold tracking-tight">APEX</span>
+              <span className="block text-sm font-semibold tracking-tight">AppleShop</span>
               <span className="block text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Boshqaruv</span>
             </span>
           </Link>

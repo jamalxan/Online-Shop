@@ -5,6 +5,7 @@ import { Mail, CheckCircle, ArrowRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { subscribeNewsletter } from "@/lib/api"
+import { Reveal } from "@/components/motion/reveal"
 
 export function NewsletterSection() {
   const [email, setEmail] = useState("")
@@ -48,7 +49,7 @@ export function NewsletterSection() {
               </p>
             </div>
           ) : (
-            <>
+            <Reveal>
               <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-background/10">
                 <Mail className="h-7 w-7" aria-hidden="true" />
               </div>
@@ -77,7 +78,7 @@ export function NewsletterSection() {
                   <Button
                     type="submit"
                     disabled={status === "loading"}
-                    className="h-12 bg-background text-foreground hover:bg-background/90 px-8"
+                    className="press h-12 bg-background text-foreground hover:bg-background/90 px-8"
                   >
                     {status === "loading" ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />Yuborilmoqda</>
@@ -88,7 +89,7 @@ export function NewsletterSection() {
                 </div>
                 {error && <p id={errorId} role="alert" className="mt-3 text-sm text-red-300">{error}</p>}
               </form>
-            </>
+            </Reveal>
           )}
         </div>
       </div>

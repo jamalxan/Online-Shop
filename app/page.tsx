@@ -8,16 +8,34 @@ import { WhyChooseUsSection } from "@/components/home/why-choose-us-section"
 import { NewsletterSection } from "@/components/home/newsletter-section"
 import { getCategories, getProductFacets, getProductPageSafe, getStoreInfo } from "@/lib/api"
 import { toCurrency } from "@/lib/utils"
+import type { Product } from "@/lib/types"
 
 /** how many cards the catalogue block shows per tab */
 const SHOWCASE_SIZE = 8
+/** products standing in front of the hero photograph */
+const STAGE_SIZE = 3
+
+/** The dearest product of each category, dearest category first — the shop's flagships, never two of a kind. */
+function pickFlagships(byPriceDesc: Product[], limit: number) {
+    const seen = new Set<string>()
+    const picked: Product[] = []
+    for (const product of byPriceDesc) {
+        const key = String(product.categoryId ?? product.category)
+        if (seen.has(key) || !product.image) continue
+        seen.add(key)
+        picked.push(product)
+        if (picked.length === limit) break
+    }
+    return picked.map(({ id, name, price, image }) => ({ id, name, price, image }))
+}
 
 export default async function HomePage() {
     // Bounded requests only (never the whole catalogue). Each one degrades to "empty" when the API
     // is unreachable, and the sections then hide themselves.
-    const [latest, facets, categories, store] = await Promise.all([
-        getProductPageSafe({ pageSize: SHOWCASE_SIZE }), // newest first
-        getProductFacets(),                              // total and lowest price
+    const [latest, dearest, facets, categories, store] = await Promise.all([
+        getProductPageSafe({ pageSize: SHOWCASE_SIZE }),                 // newest first
+        getProductPageSafe({ sort: "price_desc", pageSize: 12 }),        // flagships for the hero
+        getProductFacets(),                                              // lowest price
         getCategories(),
         getStoreInfo(),
     ])
@@ -26,7 +44,11 @@ export default async function HomePage() {
         <>
             <Header />
             <main id="main-content">
-                <HeroSection productCount={facets.count} minPrice={facets.minPrice ?? undefined} currency={toCurrency(store.currency)} />
+                <HeroSection
+                    minPrice={facets.minPrice ?? undefined}
+                    currency={toCurrency(store.currency)}
+                    stageProducts={pickFlagships(dearest.results, STAGE_SIZE)}
+                />
                 <CategoriesSection />
                 <BestSellersSection
                     products={latest.results}

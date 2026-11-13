@@ -23,8 +23,6 @@ function safeLink(url: string): boolean {
 
 export function Footer() {
   const { categories, store } = useStore()
-  // No online gateway: pay on delivery, or by card transfer when the shop has published a card.
-  const paymentMethods = ["Naqd pul", "Karta (qabul qilganda)", ...(store.card_payment ? ["Kartaga o'tkazma"] : [])]
   const shopLinks = categories.map((c) => ({ name: c.name, href: c.href }))
 
   return (
@@ -34,11 +32,11 @@ export function Footer() {
         <div className="grid gap-12 lg:grid-cols-5">
           {/* Brand */}
           <div className="lg:col-span-2">
-            <Link href="/" className="flex items-center gap-2" aria-label="APEX Store — bosh sahifa">
+            <Link href="/" className="flex items-center gap-2" aria-label="AppleShop — bosh sahifa">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background">
                 <span className="text-base font-bold text-foreground">A</span>
               </div>
-              <span className="text-xl font-semibold tracking-tight">APEX</span>
+              <span className="text-xl font-semibold tracking-tight">AppleShop</span>
             </Link>
             <p className="mt-6 max-w-sm text-background/70 leading-relaxed">
               Original Apple mahsulotlari: iPhone, MacBook, AirPods, Apple Watch va aksessuarlar. 
@@ -149,17 +147,6 @@ export function Footer() {
                 <span className="sr-only">Telegram</span>
               </a>
             )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            {paymentMethods.map((method) => (
-              <div
-                key={method}
-                className="flex h-8 items-center justify-center rounded bg-background/10 px-3 text-xs font-medium"
-              >
-                {method}
-              </div>
-            ))}
           </div>
 
           <p className="text-sm text-background/50">

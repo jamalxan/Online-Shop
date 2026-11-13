@@ -206,8 +206,8 @@ if AUTH_COOKIE_SAMESITE == 'None' and not AUTH_COOKIE_SECURE:
 
 # ─── DRF Spectacular ─────────────────────────────────────
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'APEX Store API',
-    'DESCRIPTION': 'APEX Store (Apple mahsulotlari do\'koni) uchun backend API',
+    'TITLE': 'AppleShop API',
+    'DESCRIPTION': 'AppleShop (Apple mahsulotlari do\'koni) uchun backend API',
     'VERSION': '1.0.0',
 }
 

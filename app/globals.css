@@ -170,3 +170,182 @@ html {
   background-color: oklch(0.97 0 0);
   color: oklch(0.12 0 0);
 }
+
+/* ─── Motion layer (landing page) ─────────────────────────────────────────────
+   Transform and opacity only. Every hidden or tilted starting state lives inside
+   `prefers-reduced-motion: no-preference`, so the reduced state is simply the finished page.
+   Scripts: components/motion/* and components/home/hero-stage.tsx. */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+/* A control gives a little under the finger. */
+.press {
+  transition: transform 140ms var(--ease-out), background-color 180ms ease, color 180ms ease;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* Hero headline: each line sits in its own mask and tips up from its baseline.
+   The padding/negative-margin pair keeps descenders (g, y, j) out of the mask's edge. */
+.hero-line {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+  perspective: 900px;
+}
+.hero-line__text {
+  display: block;
+  transform-origin: 50% 100%;
+}
+
+/* Hero stage: the photograph is a plane in 3D, the cards stand in front of it by --depth. */
+.hero-stage {
+  perspective: 1400px;
+  perspective-origin: 50% 30%;
+}
+.hero-stage__plane {
+  transform-style: preserve-3d;
+  transform-origin: 50% 100%;
+}
+.hero-stage__float {
+  position: absolute;
+  transform: translate3d(0, 0, var(--depth, 0px));
+}
+.hero-stage__card img {
+  transition: transform 500ms var(--ease-out);
+}
+
+/* A surface that leans toward the pointer (components/motion/tilt.tsx sets --tilt-x / --tilt-y). */
+.tilt {
+  perspective: 1000px;
+}
+.tilt-plane {
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+}
+.tilt-layer {
+  transition: transform 400ms var(--ease-out);
+}
+
+/* Stagger: the nth child of a revealed group starts n steps later. */
+[data-reveal-kind] > :nth-child(2) { --i: 1; }
+[data-reveal-kind] > :nth-child(3) { --i: 2; }
+[data-reveal-kind] > :nth-child(4) { --i: 3; }
+[data-reveal-kind] > :nth-child(5) { --i: 4; }
+[data-reveal-kind] > :nth-child(6) { --i: 5; }
+[data-reveal-kind] > :nth-child(7) { --i: 6; }
+[data-reveal-kind] > :nth-child(8) { --i: 7; }
+[data-reveal-kind] > :nth-child(n + 9) { --i: 8; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-line__text {
+    animation: hero-line-in 1000ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 120ms + 60ms);
+  }
+  [data-rise] {
+    animation: rise-in 800ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+  }
+  /* The hero paragraph is the largest text on a phone's first screen, i.e. the LCP element.
+     A fade from opacity 0 would postpone its first paint to the end of the animation
+     (measured: LCP 0.4s → 1.5s), so it only settles into place and is never transparent. */
+  [data-rise="solid"] {
+    animation-name: settle-in;
+  }
+
+  /* Starting pose of the stage — the same numbers hero-stage.tsx begins from. */
+  .hero-stage__plane {
+    transform: rotateX(26deg) scale(0.88);
+  }
+  .hero-stage__photo {
+    transform: scale(1.14);
+  }
+  .hero-stage__float {
+    transform: translate3d(0, var(--drift, 0px), var(--depth, 0px));
+  }
+
+  /* Section entrances (components/motion/reveal.tsx). `backwards` hands the element back to its
+     own styles when the entrance is over, so hover transforms keep working afterwards. */
+  [data-reveal="pending"] > * {
+    opacity: 0;
+  }
+  [data-reveal="in"] > :not(.animate-pulse) {
+    animation: rise-in 800ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 80ms);
+  }
+  [data-reveal="in"][data-reveal-kind="fold"] > * {
+    animation-name: fold-in;
+    animation-duration: 900ms;
+    animation-delay: calc(var(--i, 0) * 90ms);
+  }
+  [data-reveal="in"][data-reveal-kind="turn"] > * {
+    animation-name: turn-in;
+    animation-duration: 900ms;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  [data-reveal="in"][data-reveal-kind="slide"] > * {
+    animation-name: slide-in;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  .tilt:hover .tilt-layer {
+    transform: translateZ(var(--z, 36px));
+  }
+  .hero-stage__card:hover img {
+    transform: scale(1.06);
+  }
+}
+
+/* Without scripting nothing would ever bring the stage upright — show it finished. */
+@media (scripting: none) {
+  .hero-stage__plane,
+  .hero-stage__photo {
+    transform: none;
+  }
+  .hero-stage__float {
+    transform: translate3d(0, 0, var(--depth, 0px));
+  }
+}
+
+@keyframes hero-line-in {
+  from { transform: translate3d(0, 105%, 0) rotateX(-68deg); }
+  to { transform: translate3d(0, 0, 0) rotateX(0deg); }
+}
+@keyframes settle-in {
+  from { transform: translate3d(0, 18px, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translate3d(0, 28px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes fold-in {
+  from { opacity: 0; transform: perspective(1000px) translate3d(0, 48px, -80px) rotateX(-24deg); }
+  to { opacity: 1; transform: perspective(1000px) translate3d(0, 0, 0) rotateX(0deg); }
+}
+@keyframes turn-in {
+  from { opacity: 0; transform: perspective(1000px) translate3d(-28px, 0, -60px) rotateY(-26deg); }
+  to { opacity: 1; transform: perspective(1000px) translate3d(0, 0, 0) rotateY(0deg); }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translate3d(72px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+/* Cards swapped in by a tab change arrive the same way they first did, only quicker. */
+@media (prefers-reduced-motion: no-preference) {
+  .swap-in {
+    animation: swap-in 500ms var(--ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+}
+@keyframes swap-in {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}

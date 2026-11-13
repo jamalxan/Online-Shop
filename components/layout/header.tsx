@@ -113,11 +113,11 @@ export function Header() {
   }
 
   const logo = (
-    <Link href="/" className="flex items-center gap-2" aria-label="APEX Store — bosh sahifa">
+    <Link href="/" className="flex items-center gap-2" aria-label="AppleShop — bosh sahifa">
       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground">
         <span className="text-sm font-bold text-background" aria-hidden="true">A</span>
       </div>
-      <span className="text-lg font-semibold tracking-tight">APEX</span>
+      <span className="text-lg font-semibold tracking-tight">AppleShop</span>
     </Link>
   )
 

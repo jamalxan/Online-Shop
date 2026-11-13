@@ -15,7 +15,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     ? { title: `"${q}" bo'yicha qidiruv`, robots: { index: false } }
     : {
         title: "Barcha mahsulotlar",
-        description: "APEX Store'dagi barcha Apple mahsulotlari: iPhone, MacBook, AirPods, Apple Watch va aksessuarlar.",
+        description: "AppleShop'dagi barcha Apple mahsulotlari: iPhone, MacBook, AirPods, Apple Watch va aksessuarlar.",
         alternates: { canonical: "/products" },
       }
 }

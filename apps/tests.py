@@ -1,16 +1,20 @@
 """
-APEX Store backend testlari.
+AppleShop backend testlari.
 
 Ishga tushirish (SQLite bilan, Postgres/Redis shart emas):
     DB_NAME= python manage.py test          (bash)
     $env:DB_NAME=''; python manage.py test  (PowerShell)
 """
+import importlib
 import io
+import os
 import re
 import shutil
 import tempfile
 from decimal import Decimal
+from unittest import mock
 
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
@@ -26,8 +30,8 @@ from apps.models import (
 )
 
 PASSWORD = 'Str0ng-Parol!42'
-MEDIA_TMP = tempfile.mkdtemp(prefix='apex-test-media-')
-PRIVATE_TMP = tempfile.mkdtemp(prefix='apex-test-private-')
+MEDIA_TMP = tempfile.mkdtemp(prefix='appleshop-test-media-')
+PRIVATE_TMP = tempfile.mkdtemp(prefix='appleshop-test-private-')
 
 
 def image_file(name='photo.png', size=(8, 8), fmt='PNG'):
@@ -812,7 +816,7 @@ class PaymentTests(BaseTestCase):
     def setUp(self):
         super().setUp()
         StoreSettings.objects.update_or_create(pk=1, defaults={
-            'payment_card_number': '8600 1111 2222 3333', 'payment_card_holder': 'APEX STORE',
+            'payment_card_number': '8600 1111 2222 3333', 'payment_card_holder': 'APPLESHOP',
         })
         cache.clear()
         self.login(self.user)
@@ -1336,14 +1340,14 @@ class StoreContentTests(BaseTestCase):
         self.client.get('/api/store/')  # keshni to'ldiradi
         self.login(self.admin)
         res = self.client.patch('/api/admin/settings/', {
-            'phone': '+998 90 123 45 67', 'telegram_url': 'https://t.me/apex',
-            'payment_card_number': '8600111122223333', 'payment_card_holder': 'APEX STORE',
+            'phone': '+998 90 123 45 67', 'telegram_url': 'https://t.me/appleshop',
+            'payment_card_number': '8600111122223333', 'payment_card_holder': 'APPLESHOP',
         })
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data['payment_card_number'], '8600 1111 2222 3333')
         public = self.client.get('/api/store/').data            # kesh yangilangan
         self.assertEqual(public['phone'], '+998 90 123 45 67')
-        self.assertEqual(public['card_payment']['card_holder'], 'APEX STORE')
+        self.assertEqual(public['card_payment']['card_holder'], 'APPLESHOP')
         log = AdminAuditLog.objects.get(action='settings.update')
         self.assertIn('payment_card_number', log.summary)
 
@@ -1663,3 +1667,90 @@ class AdminAccountTests(BaseTestCase):
         self.assertEqual(self.client.post('/api/admin/auth/account/email/confirm/', {'code': '123456'}).status_code, 403)
         self.user.refresh_from_db()
         self.assertEqual(self.user.email, 'ali@example.com')
+
+
+class AppleShopRenameMigrationTests(BaseTestCase):
+    """0010: faqat eski standart qiymatlar almashadi — admin o'zi kiritgan nom va rasm joyida qoladi."""
+
+    migration = importlib.import_module('apps.migrations.0010_appleshop_rename')
+
+    def forwards(self):
+        self.migration.forwards(django_apps, None)
+
+    def backwards(self):
+        self.migration.backwards(django_apps, None)
+
+    def media_path(self, name):
+        return os.path.join(settings.MEDIA_ROOT, *name.split('/'))
+
+    def tearDown(self):
+        # Har test toza media bilan boshlansin: migratsiya rasmni bor bo'lsa qayta ko'chirmaydi
+        path = self.media_path(self.migration.NEW_ACCESSORIES_PHOTO)
+        if os.path.exists(path):
+            os.remove(path)
+        super().tearDown()
+
+    def test_new_shops_are_called_appleshop(self):
+        self.assertEqual(StoreSettings.load().store_name, 'AppleShop')
+
+    def test_old_default_name_is_replaced_and_restored(self):
+        StoreSettings.objects.update_or_create(pk=1, defaults={'store_name': 'APEX Store'})
+        self.forwards()
+        self.assertEqual(StoreSettings.objects.get(pk=1).store_name, 'AppleShop')
+        self.backwards()
+        self.assertEqual(StoreSettings.objects.get(pk=1).store_name, 'APEX Store')
+
+    def test_a_name_the_admin_chose_is_left_alone(self):
+        StoreSettings.objects.update_or_create(pk=1, defaults={'store_name': 'iStore Toshkent'})
+        self.forwards()
+        self.assertEqual(StoreSettings.objects.get(pk=1).store_name, 'iStore Toshkent')
+
+    def test_the_picture_ships_with_the_code(self):
+        # Media git'da ham, Docker image'da ham yo'q: rasm apps/ ichida kelishi shart
+        self.assertTrue(self.migration.SEED_PHOTO.is_file())
+        with Image.open(self.migration.SEED_PHOTO) as picture:
+            self.assertEqual(picture.format, 'JPEG')
+
+    def test_accessories_gets_the_new_picture_copied_into_media(self):
+        accessories = Category.objects.create(title='Accessories', photo=self.migration.OLD_ACCESSORIES_PHOTO)
+        self.forwards()
+        accessories.refresh_from_db()
+        self.assertEqual(accessories.photo.name, self.migration.NEW_ACCESSORIES_PHOTO)
+        with open(self.media_path(accessories.photo.name), 'rb') as copied:
+            self.assertEqual(copied.read(), self.migration.SEED_PHOTO.read_bytes())
+
+        self.forwards()  # qayta ishga tushsa ham bitta fayl, o'sha nom
+        accessories.refresh_from_db()
+        self.assertEqual(accessories.photo.name, self.migration.NEW_ACCESSORIES_PHOTO)
+        self.assertEqual(os.listdir(os.path.dirname(self.media_path(accessories.photo.name))), ['accessories.jpg'])
+
+        self.backwards()
+        accessories.refresh_from_db()
+        self.assertEqual(accessories.photo.name, self.migration.OLD_ACCESSORIES_PHOTO)
+
+    def test_a_picture_already_in_media_is_reused_not_duplicated(self):
+        path = self.media_path(self.migration.NEW_ACCESSORIES_PHOTO)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        shutil.copyfile(self.migration.SEED_PHOTO, path)
+        accessories = Category.objects.create(title='Accessories', photo=self.migration.OLD_ACCESSORIES_PHOTO)
+        self.forwards()
+        accessories.refresh_from_db()
+        self.assertEqual(accessories.photo.name, self.migration.NEW_ACCESSORIES_PHOTO)
+        self.assertEqual(os.listdir(os.path.dirname(path)), ['accessories.jpg'])
+
+    def test_without_the_picture_the_category_keeps_its_old_one(self):
+        accessories = Category.objects.create(title='Accessories', photo=self.migration.OLD_ACCESSORIES_PHOTO)
+        with mock.patch.object(self.migration, 'SEED_PHOTO', self.migration.SEED_PHOTO.with_name('missing.jpg')):
+            self.forwards()
+        accessories.refresh_from_db()
+        self.assertEqual(accessories.photo.name, self.migration.OLD_ACCESSORIES_PHOTO)
+
+    def test_other_categories_and_uploaded_photos_are_left_alone(self):
+        uploaded = Category.objects.create(title='Accessories', photo='categories/own-upload.png')
+        same_file_other_category = Category.objects.create(title='Macs', photo=self.migration.OLD_ACCESSORIES_PHOTO)
+        self.forwards()
+        uploaded.refresh_from_db()
+        same_file_other_category.refresh_from_db()
+        self.assertEqual(uploaded.photo.name, 'categories/own-upload.png')
+        self.assertEqual(same_file_other_category.photo.name, self.migration.OLD_ACCESSORIES_PHOTO)
+        self.assertFalse(os.path.exists(self.media_path(self.migration.NEW_ACCESSORIES_PHOTO)))

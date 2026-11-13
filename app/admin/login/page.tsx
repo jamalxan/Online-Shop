@@ -137,7 +137,7 @@ export default function AdminLoginPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground">
             <span className="text-background font-bold" aria-hidden="true">A</span>
           </div>
-          <h1 className="mt-4 text-2xl font-bold">APEX Admin</h1>
+          <h1 className="mt-4 text-2xl font-bold">AppleShop Admin</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {step === "credentials" ? "Admin panelga kirish" : "Ikki bosqichli tasdiqlash"}
           </p>

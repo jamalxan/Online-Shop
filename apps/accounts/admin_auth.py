@@ -105,7 +105,7 @@ class AdminLoginView(APIView):
         code = otp.issue(OTP_ADMIN, challenge, enforce_limits=False)
         cache.set(_challenge_key(challenge), user.pk, CHALLENGE_TTL)
 
-        if not send_email(user.email, code, subject="APEX Admin — kirish kodi"):
+        if not send_email(user.email, code, subject="AppleShop Admin — kirish kodi"):
             return Response(
                 {'error': "Email yuborib bo'lmadi. Server sozlamalarini tekshiring."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -189,7 +189,7 @@ class AdminResendOtpView(APIView):
         except otp.OtpError as exc:
             return Response({'error': exc.message}, status=exc.status)
         code = otp.issue(OTP_ADMIN, challenge, enforce_limits=False)
-        if not send_email(user.email, code, subject="APEX Admin — kirish kodi"):
+        if not send_email(user.email, code, subject="AppleShop Admin — kirish kodi"):
             return Response({'error': "Email yuborib bo'lmadi"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response({'message': "Yangi kod yuborildi"})
 
@@ -232,7 +232,7 @@ class AdminEmailChangeView(APIView):
             return Response({'error': exc.message}, status=exc.status)
         cache.set(_email_change_key(user.pk), new_email, EMAIL_CHANGE_TTL)
 
-        if not send_email(new_email, code, subject="APEX Admin — yangi emailni tasdiqlash"):
+        if not send_email(new_email, code, subject="AppleShop Admin — yangi emailni tasdiqlash"):
             return Response(
                 {'error': "Email yuborib bo'lmadi. Server sozlamalarini tekshiring."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,

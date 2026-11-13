@@ -8,7 +8,7 @@ import { getCategories, getProductFacets } from "@/lib/api"
 
 export const metadata: Metadata = {
   title: "Biz haqimizda",
-  description: "APEX Store — original Apple mahsulotlari onlayn do'koni: iPhone, MacBook, AirPods, Apple Watch va aksessuarlar.",
+  description: "AppleShop — original Apple mahsulotlari onlayn do'koni: iPhone, MacBook, AirPods, Apple Watch va aksessuarlar.",
 }
 
 // No invented history, awards, certificates or customer counts: this page states what the shop
@@ -39,7 +39,7 @@ export default async function AboutPage() {
               Original Apple texnikasi uchun onlayn do&apos;kon
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-              APEX Store — iPhone, MacBook, AirPods, Apple Watch va aksessuarlarni bir joyda tanlash,
+              AppleShop — iPhone, MacBook, AirPods, Apple Watch va aksessuarlarni bir joyda tanlash,
               buyurtma berish va qabul qilganda to&apos;lash mumkin bo&apos;lgan do&apos;kon.
             </p>
             {facets.count > 0 && (

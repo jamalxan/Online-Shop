@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowUpRight } from "lucide-react"
 import { ProductCard } from "@/components/product-card"
+import { Reveal } from "@/components/motion/reveal"
 import { getProductPageSafe } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { Category, Product } from "@/lib/types"
@@ -45,16 +46,11 @@ export function BestSellersSection({ products, categories, pageSize }: Props) {
   return (
       <section className="py-20 lg:py-32 bg-secondary/30">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-6">
+          <Reveal className="flex flex-col gap-6">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                Katalog
-                </p>
-                <h2 className="mt-2 font-serif text-3xl sm:text-4xl lg:text-5xl text-balance">
-                  Mahsulotlarimiz
-                </h2>
-              </div>
+              <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl text-balance">
+                Mahsulotlarimiz
+              </h2>
               <Link
                   href="/products"
                   className="group flex items-center gap-2 text-sm font-medium hover:text-muted-foreground transition-colors"
@@ -72,7 +68,7 @@ export function BestSellersSection({ products, categories, pageSize }: Props) {
                       aria-pressed={activeTab === tab.id}
                       onClick={() => openTab(tab.id)}
                       className={cn(
-                          "rounded-full px-5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                          "press rounded-full px-5 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                           activeTab === tab.id
                               ? "bg-foreground text-background"
                               : "bg-background text-foreground hover:bg-muted"
@@ -82,9 +78,10 @@ export function BestSellersSection({ products, categories, pageSize }: Props) {
                   </button>
               ))}
             </div>
-          </div>
+          </Reveal>
 
-          <div aria-busy={loading} className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+          {/* The cards rise one after another when the grid scrolls in — and again when a tab swaps them. */}
+          <Reveal aria-busy={loading} className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
             {loading
               ? Array.from({ length: 4 }, (_, i) => (
                   <div key={i} aria-hidden="true" className="aspect-[3/4] animate-pulse rounded-2xl bg-muted" />
@@ -100,9 +97,10 @@ export function BestSellersSection({ products, categories, pageSize }: Props) {
                       image={product.image}
                       quantity={product.quantity}
                       sizes="(max-width: 1024px) 50vw, 25vw"
+                      className="swap-in"
                   />
                 ))}
-          </div>
+          </Reveal>
           {!loading && filteredProducts.length === 0 && (
             <p className="mt-6 text-sm text-muted-foreground">Bu bo'limda hozircha mahsulot yo'q.</p>
           )}

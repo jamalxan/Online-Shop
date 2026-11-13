@@ -899,7 +899,7 @@ export async function fetchPrivateImage(url: string): Promise<string | null> {
 // ─── Store info, newsletter, contact (public) ─────────────
 
 export const EMPTY_STORE_INFO: StoreInfo = {
-  store_name: 'APEX Store', currency: 'USD', phone: '', phone_secondary: '', email: '', address: '', working_hours: '',
+  store_name: 'AppleShop', currency: 'USD', phone: '', phone_secondary: '', email: '', address: '', working_hours: '',
   telegram_url: '', instagram_url: '', delivery_note: '', card_payment: null,
 }
 

@@ -128,7 +128,7 @@ def _deliver_status_changed(email: str, order_id: int, title: str, status_label:
     )
 
 
-def notify_order_status(order, store_name: str = 'APEX Store') -> None:
+def notify_order_status(order, store_name: str = 'AppleShop') -> None:
     """Admin holatni o'zgartirganda mijozga xabar beradi (emaili bo'lsa)."""
     if not order.user_id or not order.user.email:
         return

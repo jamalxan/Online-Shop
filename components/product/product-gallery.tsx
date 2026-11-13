@@ -41,7 +41,9 @@ export function ProductGallery({ images: fallbackImages, name, activeColor }: Pr
 
   return (
     <>
-      <div className="flex flex-col gap-4 sticky top-24">
+      {/* Sticky only in the two-column layout. In one column the photo would stay pinned
+          while the title, price and tabs scroll underneath it. */}
+      <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
         {/* Main Image */}
         <div className="relative overflow-hidden rounded-2xl bg-secondary aspect-square group">
           <button

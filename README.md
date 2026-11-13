@@ -1,4 +1,4 @@
-# APEX Store
+# AppleShop
 
 Apple mahsulotlari onlayn do`koni: Django REST API + Next.js.
 

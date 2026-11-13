@@ -393,7 +393,7 @@ class StoreSettings(Model):
     """
     CURRENCIES = (('USD', 'AQSh dollari ($)'), ('UZS', "O'zbek so'mi (so'm)"))
 
-    store_name = CharField("Do'kon nomi", max_length=100, default="APEX Store")
+    store_name = CharField("Do'kon nomi", max_length=100, default="AppleShop")
     # Narxlar qaysi valyutada kiritilgani. O'zgartirish narxlarni qayta hisoblamaydi —
     # faqat saytda va xatlarda qanday ko'rsatilishini belgilaydi.
     currency = CharField("Valyuta", max_length=3, choices=CURRENCIES, default='USD')

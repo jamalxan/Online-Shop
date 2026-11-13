@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { currency } = await getStoreInfo()
   const description =
     product.description?.replace(/\s+/g, " ").trim().slice(0, 160) ||
-    `${product.name} — ${formatPrice(product.price, toCurrency(currency))}. APEX Store'da xarid qiling.`
+    `${product.name} — ${formatPrice(product.price, toCurrency(currency))}. AppleShop'da xarid qiling.`
 
   return {
     title: product.name,
