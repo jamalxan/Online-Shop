@@ -11,7 +11,7 @@ import {
   changePassword,
 } from "@/lib/api"
 import { useStore } from "@/lib/store-context"
-import { cn, formatDate, pinActiveCurrency } from "@/lib/utils"
+import { cn, convertPrice, formatDate, formatPrice, pinActiveCurrency, toCurrency } from "@/lib/utils"
 import type { AdminStoreSettings } from "@/lib/types"
 
 type Tab = "store" | "account" | "audit"
@@ -51,9 +51,22 @@ function StoreForm({ initial, onSaved }: { initial: AdminStoreSettings; onSaved:
     setJustSaved(false)
   }
 
+  const setRate = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = event.target.value.replace(/\D/g, "").slice(0, 7)
+    setForm((prev) => ({ ...prev, usd_rate: Number(digits) }))
+    setJustSaved(false)
+  }
+
+  // What the three currency settings add up to, shown before saving: a wrong rate is obvious here.
+  const base = toCurrency(form.currency)
+  const other = base === "USD" ? "UZS" : "USD"
+  const sample = base === "USD" ? 1000 : 12_000_000
+  const rateValid = form.usd_rate >= 1000 && form.usd_rate <= 1_000_000
+
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     if (saving) return
+    if (!rateValid) { setError("Dollar kursini to'g'ri kiriting: 1 dollar necha so'm (masalan, 12000)."); return }
     setSaving(true)
     setError("")
     const res = await adminUpdateSettings(form)
@@ -88,24 +101,50 @@ function StoreForm({ initial, onSaved }: { initial: AdminStoreSettings; onSaved:
           <div className="sm:col-span-2">{text("address", "Manzil", { placeholder: "Toshkent sh., ..." })}</div>
           {text("working_hours", "Ish vaqti", { placeholder: "Du–Sha 9:00–20:00" })}
           {text("delivery_note", "Yetkazib berish haqida", { hint: "Checkout sahifasida ko'rsatiladi." })}
-          <Field
-            label="Narxlar valyutasi"
-            hint={form.currency !== initial.currency
-              ? "Diqqat: narxlar qayta hisoblanmaydi. 999 deb kiritilgan narx 999 so'm bo'lib ko'rinadi — avval mahsulot narxlarini yangilang."
-              : "Mahsulot narxlari shu valyutada kiritiladi va saytda shunday ko'rsatiladi."}
-          >
-            {(props) => (
-              <select {...props} value={form.currency} onChange={set("currency")} className={inputClass}>
-                <option value="USD">AQSh dollari — $1,099</option>
-                <option value="UZS">O&apos;zbek so&apos;mi — 13 500 000 so&apos;m</option>
-              </select>
-            )}
-          </Field>
           {text("telegram_url", "Telegram havolasi", { type: "url", inputMode: "url", placeholder: "https://t.me/..." })}
           {text("instagram_url", "Instagram havolasi", { type: "url", inputMode: "url", placeholder: "https://instagram.com/..." })}
         </div>
         <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
           Bo&apos;sh qoldirilgan maydon saytda ko&apos;rsatilmaydi (soxta raqam yoki manzil chiqmaydi).
+        </p>
+      </Panel>
+
+      <Panel>
+        <PanelHeader title="Valyuta va kurs" />
+        <div className="grid gap-4 p-5 sm:grid-cols-3">
+          <Field
+            label="Narxlar valyutasi"
+            hint={form.currency !== initial.currency
+              ? `Diqqat: bu narxlarning o'zini o'zgartirmaydi — kiritilgan sonlar qaysi valyutada ekanini bildiradi. 999 deb kiritilgan narx endi ${formatPrice(999, base)} deb o'qiladi.`
+              : "Mahsulot narxlarini qaysi valyutada kiritsangiz, shuni tanlang."}
+          >
+            {(props) => (
+              <select {...props} value={form.currency} onChange={set("currency")} className={inputClass}>
+                <option value="USD">AQSh dollari ($)</option>
+                <option value="UZS">O&apos;zbek so&apos;mi (so&apos;m)</option>
+              </select>
+            )}
+          </Field>
+          <Field label="Dollar kursi (so'm)" hint="1 AQSh dollari necha so'm. Narxlar shu kurs bo'yicha hisoblanadi.">
+            {(props) => (
+              <input {...props} type="text" inputMode="numeric" value={form.usd_rate || ""} onChange={setRate}
+                placeholder="12000" autoComplete="off" className={inputClass} />
+            )}
+          </Field>
+          <Field label="Saytda standart ko'rinish" hint="Xaridor o'zi tanlamaguncha narxlar shu valyutada ko'rinadi.">
+            {(props) => (
+              <select {...props} value={form.display_currency} onChange={set("display_currency")} className={inputClass}>
+                <option value="UZS">So&apos;mda — 13 500 000 so&apos;m</option>
+                <option value="USD">Dollarda — $1,099</option>
+              </select>
+            )}
+          </Field>
+        </div>
+        <p className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
+          {rateValid
+            ? <>Namuna: <span className="font-medium text-foreground">{formatPrice(sample, base)}</span> deb kiritilgan narx = <span className="font-medium text-foreground">{formatPrice(convertPrice(sample, base, other, form.usd_rate), other)}</span>. </>
+            : "Kursni kiriting — namuna shu yerda ko'rinadi. "}
+          Xaridor sayt tepasidagi «so&apos;m / $» tugmasi bilan valyutani o&apos;zi almashtira oladi.
         </p>
       </Panel>
 

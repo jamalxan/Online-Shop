@@ -694,6 +694,18 @@ class OrderTests(BaseTestCase):
         self.product.save()
         self.assertEqual(self.client.get(f"/api/orders/{order['id']}/").data['total_price'], '1800')
 
+    def test_order_keeps_the_exchange_rate_it_was_placed_at(self):
+        store = StoreSettings.load()
+        store.usd_rate = 11975
+        store.save()
+        res = self.client.post('/api/orders/', self.order_payload(product_id=self.product.pk, usd_rate=1))
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data[0]['usd_rate'], 11975)             # mijoz yuborgan qiymat hisobga olinmaydi
+
+        store.usd_rate = 13000                                       # kurs keyin o'zgarsa ham buyurtma o'zgarmaydi
+        store.save()
+        self.assertEqual(self.client.get(f"/api/orders/{res.data[0]['id']}/").data['usd_rate'], 11975)
+
     def test_client_cannot_dictate_price(self):
         res = self.client.post('/api/orders/', self.order_payload(
             product_id=self.product.pk, unit_price=1, total_price=1, price=1, status='delivered', user=self.other.pk,
@@ -1362,6 +1374,23 @@ class StoreContentTests(BaseTestCase):
         self.assertEqual(self.client.patch('/api/admin/settings/', {'currency': 'EUR'}).status_code, 400)
         self.assertTrue(AdminAuditLog.objects.filter(action='settings.update', summary__contains='currency').exists())
 
+    def test_exchange_rate_and_default_display_currency(self):
+        public = self.client.get('/api/store/').data
+        self.assertEqual((public['usd_rate'], public['display_currency']), (12000, 'USD'))
+        self.login(self.admin)
+        res = self.client.patch('/api/admin/settings/', {'usd_rate': 11975, 'display_currency': 'UZS'})
+        self.assertEqual(res.status_code, 200, res.data)
+        self.logout()
+        public = self.client.get('/api/store/').data                # narxlar valyutasi o'zgarmaydi
+        self.assertEqual(
+            (public['currency'], public['usd_rate'], public['display_currency']), ('USD', 11975, 'UZS'),
+        )
+        self.login(self.admin)
+        for bad in (0, 12, -5, 'abc', 5_000_000):                    # xato terilgan kurs narxlarni buzmasin
+            self.assertEqual(self.client.patch('/api/admin/settings/', {'usd_rate': bad}).status_code, 400, bad)
+        self.assertEqual(self.client.patch('/api/admin/settings/', {'display_currency': 'EUR'}).status_code, 400)
+        self.assertEqual(StoreSettings.load().usd_rate, 11975)
+
     def test_settings_validation(self):
         self.login(self.admin)
         bad = [
@@ -1544,7 +1573,7 @@ class NotificationTests(BaseTestCase):
     @override_settings(ORDER_NOTIFY_EMAILS=['sotuv@example.com'])
     def test_order_emails_use_the_shop_currency(self):
         settings_row = StoreSettings.load()
-        settings_row.currency = 'UZS'
+        settings_row.currency = settings_row.display_currency = 'UZS'
         settings_row.save()
         self.product.price, self.product.discount = 13_500_000, 0
         self.product.save()
@@ -1556,9 +1585,35 @@ class NotificationTests(BaseTestCase):
         self.assertIn("27 000 000 so'm", staff_mail.body)
         self.assertNotIn('$', staff_mail.body)
 
+    @override_settings(ORDER_NOTIFY_EMAILS=['sotuv@example.com'])
+    def test_order_emails_convert_dollar_prices_to_soum(self):
+        settings_row = StoreSettings.load()                          # narxlar dollarda, sayt so'mda ko'rsatadi
+        settings_row.currency, settings_row.display_currency, settings_row.usd_rate = 'USD', 'UZS', 12000
+        settings_row.save()
+        self.login(self.user)
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.client.post('/api/orders/', self.order_payload(product_id=self.product.pk, quantity=2))
+        self.assertEqual(res.status_code, 201, res.data)
+        staff_mail = next(m for m in mail.outbox if m.to == ['sotuv@example.com'])
+        self.assertIn("21 600 000 so'm", staff_mail.body)            # 2 × $900 × 12 000
+        self.assertNotIn('$', staff_mail.body)
+
+    def test_store_money_converts_into_the_display_currency(self):
+        dollars_shown_as_soum = StoreSettings(currency='USD', display_currency='UZS', usd_rate=12000)
+        self.assertEqual(dollars_shown_as_soum.money(79), "948 000 so'm")
+        self.assertEqual(dollars_shown_as_soum.money(79, rate=10000), "790 000 so'm")   # buyurtmadagi kurs
+        self.assertEqual(dollars_shown_as_soum.money(79, rate=0), "948 000 so'm")       # eski buyurtma: joriy kurs
+
+        soum_shown_as_dollars = StoreSettings(currency='UZS', display_currency='USD', usd_rate=12000)
+        self.assertEqual(soum_shown_as_dollars.money(13_500_000), '$1,125')
+        self.assertEqual(soum_shown_as_dollars.money(1_000_000), '$83.33')
+
+        self.assertEqual(StoreSettings(currency='USD', display_currency='USD', usd_rate=12000).money(1099), '$1,099')
+        self.assertEqual(StoreSettings(currency='UZS', display_currency='UZS', usd_rate=12000).money(999), "999 so'm")
+
     def test_format_money(self):
         self.assertEqual(format_money(1099), '$1,099')
-        self.assertEqual(format_money('989.5', 'USD'), '$990')
+        self.assertEqual(format_money('989.5', 'USD'), '$989.50')
         self.assertEqual(format_money(13500000, 'UZS'), "13 500 000 so'm")
         self.assertEqual(format_money(None, 'UZS'), "0 so'm")
 
@@ -1754,3 +1809,119 @@ class AppleShopRenameMigrationTests(BaseTestCase):
         self.assertEqual(uploaded.photo.name, 'categories/own-upload.png')
         self.assertEqual(same_file_other_category.photo.name, self.migration.OLD_ACCESSORIES_PHOTO)
         self.assertFalse(os.path.exists(self.media_path(self.migration.NEW_ACCESSORIES_PHOTO)))
+
+
+class DisplayCurrencyMigrationTests(BaseTestCase):
+    """0011: sayt qaysi valyutada ko'rinib turgan bo'lsa, yangilanishdan keyin ham o'shanda ko'rinadi."""
+
+    migration = importlib.import_module('apps.migrations.0011_exchange_rate_display_currency')
+
+    def test_a_shop_showing_soum_keeps_showing_soum(self):
+        StoreSettings.objects.update_or_create(pk=1, defaults={'currency': 'UZS', 'display_currency': 'USD'})
+        self.migration.forwards(django_apps, None)
+        self.assertEqual(StoreSettings.objects.get(pk=1).display_currency, 'UZS')
+
+    def test_a_dollar_shop_is_untouched(self):
+        StoreSettings.objects.update_or_create(pk=1, defaults={'currency': 'USD', 'display_currency': 'USD'})
+        self.migration.forwards(django_apps, None)
+        row = StoreSettings.objects.get(pk=1)
+        self.assertEqual((row.currency, row.display_currency), ('USD', 'USD'))
+
+
+class DemoPaymentTests(BaseTestCase):
+    """Onlayn to'lov usullari hozircha demo: pul yechilmaydi, to'lov "demo" belgisi bilan yoziladi."""
+
+    ONLINE = ('apple_pay', 'google_pay', 'click', 'payme', 'xazna')
+
+    def setUp(self):
+        super().setUp()
+        self.login(self.user)
+
+    def order(self, **extra):
+        payload = {'product_id': self.product.pk, 'quantity': 2, **extra}
+        return self.client.post('/api/orders/', self.order_payload(**payload))
+
+    def test_cash_on_delivery_is_the_default_and_records_no_payment(self):
+        res = self.order()
+        self.assertEqual(res.status_code, 201, res.data)
+        order = res.data[0]
+        self.assertEqual((order['payment_method'], order['payment_method_display']), ('cash', "Qabul qilganda to'lash"))
+        self.assertEqual((order['payment_status'], order['payment_demo']), (None, False))
+        self.assertEqual(Payment.objects.count(), 0)
+
+    def test_online_method_records_a_demo_payment_for_the_server_total(self):
+        res = self.order(payment_method='payme', amount=1, is_demo=False, provider='click')
+        self.assertEqual(res.status_code, 201, res.data)
+        order = res.data[0]
+        self.assertEqual((order['payment_method'], order['payment_method_display']), ('payme', 'Payme'))
+        self.assertEqual((order['payment_status'], order['payment_demo']), ('complete', True))
+
+        payment = Payment.objects.get()
+        self.assertEqual(payment.amount, Decimal('1800'))            # 2 × 900 — mijoz yuborgan 1 emas
+        self.assertEqual((payment.provider, payment.is_demo, payment.status), ('payme', True, 'complete'))
+        self.assertEqual((payment.user, str(payment.checkout_id)), (self.user, order['checkout_id']))
+
+        mine = self.client.get('/api/payments/').data[0]
+        self.assertEqual((mine['provider'], mine['provider_display'], mine['is_demo']), ('payme', 'Payme', True))
+        listed = self.client.get('/api/orders/').data[0]
+        self.assertEqual((listed['payment_status'], listed['payment_demo']), ('complete', True))
+
+    def test_every_online_method_is_accepted_and_unknown_ones_are_not(self):
+        self.product.quantity = 50
+        self.product.save()
+        for method in self.ONLINE:
+            res = self.order(payment_method=method, quantity=1)
+            self.assertEqual(res.status_code, 201, (method, res.data))
+            self.assertEqual(res.data[0]['payment_method'], method)
+        self.assertEqual(Payment.objects.filter(is_demo=True).count(), len(self.ONLINE))
+        self.assertEqual(self.order(payment_method='bitcoin').status_code, 400)
+
+    def test_failed_order_leaves_no_payment_behind(self):
+        res = self.order(payment_method='click', quantity=99)        # omborda 5 dona
+        self.assertEqual(res.status_code, 409, res.data)
+        self.assertEqual((Order.objects.count(), Payment.objects.count()), (0, 0))
+
+    @override_settings(DEMO_PAYMENTS=False)
+    def test_online_methods_are_refused_when_demo_mode_is_off(self):
+        res = self.order(payment_method='payme')
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertEqual((Order.objects.count(), Payment.objects.count()), (0, 0))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 5)                   # ombor ham o'zgarmagan
+        self.assertFalse(self.client.get('/api/store/').data['demo_payments'])
+        self.assertEqual(self.order().status_code, 201)              # qabul qilganda to'lash ishlayveradi
+
+    def test_store_info_says_online_payments_are_demo(self):
+        self.assertTrue(self.client.get('/api/store/').data['demo_payments'])
+
+    def test_receipt_cannot_be_sent_for_an_order_already_paid_online(self):
+        StoreSettings.objects.update_or_create(pk=1, defaults={
+            'payment_card_number': '8600 1111 2222 3333', 'payment_card_holder': 'APPLESHOP',
+        })
+        checkout_id = self.order(payment_method='xazna').data[0]['checkout_id']
+        res = self.client.post(
+            '/api/payments/', {'checkout_id': checkout_id, 'check_photo': image_file('chek.png')}, format='multipart',
+        )
+        self.assertEqual(res.status_code, 409, res.data)
+        self.assertEqual(Payment.objects.count(), 1)
+
+    def test_admin_sees_the_method_and_that_no_money_arrived(self):
+        self.order(payment_method='google_pay')
+        self.login(self.admin)
+        order = self.client.get('/api/admin/orders/').data['results'][0]
+        self.assertEqual((order['payment_method'], order['payment_demo']), ('google_pay', True))
+        payment = self.client.get('/api/admin/payments/', {'status': 'complete'}).data['results'][0]
+        self.assertEqual((payment['provider'], payment['provider_display'], payment['is_demo']), ('google_pay', 'Google Pay', True))
+
+    @override_settings(ORDER_NOTIFY_EMAILS=['sotuv@example.com'])
+    def test_order_emails_name_the_payment_method(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.order(payment_method='click')
+        staff_mail = next(m for m in mail.outbox if m.to == ['sotuv@example.com'])
+        self.assertIn("To'lov: Click (demo", staff_mail.body)
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.order()
+        staff_mail = next(m for m in mail.outbox if m.to == ['sotuv@example.com'])
+        self.assertIn("To'lov: Qabul qilganda to'lash", staff_mail.body)
+        self.assertNotIn('demo', staff_mail.body)

@@ -122,9 +122,6 @@ class AdminStatsAPIView(AdminAPIView):
             'counters': counters(),
             'recent_orders': AdminOrderSerializer(
                 recent, many=True,
-                context={
-                    'request': request,
-                    'payment_status': services.payment_status_by_checkout(o.checkout_id for o in recent),
-                },
+                context={'request': request, **services.order_payment_context(recent)},
             ).data,
         })

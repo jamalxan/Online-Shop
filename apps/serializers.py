@@ -389,20 +389,27 @@ class OrderSerializer(serializers.ModelSerializer):
     product = ProductListSerializer(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     delivery_display = serializers.CharField(source='get_delivery_method_display', read_only=True)
+    payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
     payment_status = serializers.SerializerMethodField()
+    payment_demo = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = (
             'id', 'checkout_id', 'product', 'first_name', 'phone_number', 'address',
             'delivery_method', 'delivery_display', 'comment',
-            'quantity', 'unit_price', 'total_price', 'storage_label', 'color_name',
+            'payment_method', 'payment_method_display', 'payment_demo',
+            'quantity', 'unit_price', 'total_price', 'usd_rate', 'storage_label', 'color_name',
             'has_discount', 'status', 'status_display', 'payment_status', 'created_at', 'updated_at',
         )
 
     def get_payment_status(self, obj) -> str | None:
         """Shu checkout uchun yuborilgan to'lov holati (view context'da bitta so'rov bilan yuklanadi)."""
         return (self.context.get('payment_status') or {}).get(obj.checkout_id)
+
+    def get_payment_demo(self, obj) -> bool:
+        """To'lov demo rejimda "o'tgan": haqiqiy pul tushmagan."""
+        return obj.checkout_id in (self.context.get('payment_demo') or ())
 
 
 class AdminOrderSerializer(OrderSerializer):
@@ -418,6 +425,10 @@ class OrderCreateSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=20)
     address = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
     delivery_method = serializers.ChoiceField(choices=Order.Delivery.choices, default=Order.Delivery.STANDARD)
+    payment_method = serializers.ChoiceField(
+        choices=Order.PaymentMethod.choices, default=Order.PaymentMethod.CASH,
+        error_messages={'invalid_choice': "Bunday to'lov usuli yo'q"},
+    )
     comment = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
     from_cart = serializers.BooleanField(default=False)
     product_id = serializers.IntegerField(min_value=1, required=False)
@@ -438,12 +449,14 @@ class OrderCreateSerializer(serializers.Serializer):
 
 class PaymentSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    provider_display = serializers.CharField(read_only=True)
     receipt_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = (
             'id', 'checkout_id', 'card_number', 'amount', 'status', 'status_display',
+            'provider', 'provider_display', 'is_demo',
             'note', 'receipt_url', 'created_at', 'reviewed_at',
         )
 
@@ -480,11 +493,14 @@ class PaymentCreateSerializer(serializers.Serializer):
 class StoreInfoSerializer(serializers.ModelSerializer):
     """Saytda ko'rsatiladigan ochiq ma'lumot."""
     card_payment = serializers.SerializerMethodField()
+    # `demo_payments` (onlayn to'lov usullari demo rejimda yoqilganmi) javobga view'da qo'shiladi:
+    # u bazadan emas, server sozlamasidan olinadi va kesh bilan eskirib qolmasligi kerak.
 
     class Meta:
         model = StoreSettings
         fields = (
-            'store_name', 'currency', 'phone', 'phone_secondary', 'email', 'address', 'working_hours',
+            'store_name', 'currency', 'usd_rate', 'display_currency',
+            'phone', 'phone_secondary', 'email', 'address', 'working_hours',
             'telegram_url', 'instagram_url', 'delivery_note', 'card_payment',
         )
 

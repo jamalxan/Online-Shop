@@ -4,9 +4,8 @@ import { useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { ProductFilters, type FilterState } from "@/components/category/product-filters"
 import { ProductGrid } from "@/components/category/product-grid"
-import { useStore } from "@/lib/store-context"
-import { PRICE_RANGES, activeFilterCount, catalogHref, type CatalogFilters, type CatalogSort } from "@/lib/catalog"
-import { toCurrency } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
+import { activeFilterCount, catalogHref, priceRangeOptions, type CatalogFilters, type CatalogSort } from "@/lib/catalog"
 import type { CatalogFacets, Paged, Product } from "@/lib/types"
 
 interface Props {
@@ -26,7 +25,7 @@ interface Props {
  */
 export function CategoryBrowser({ page, facets, filters, basePath }: Props) {
   const router = useRouter()
-  const { store } = useStore()
+  const { base, currency, rate } = useMoney()
   const [pending, startTransition] = useTransition()
 
   const go = (next: CatalogFilters) => {
@@ -42,7 +41,7 @@ export function CategoryBrowser({ page, facets, filters, basePath }: Props) {
       <ProductFilters
         storages={facets.storages}
         colors={facets.colors}
-        priceRanges={PRICE_RANGES[toCurrency(store.currency)]}
+        priceRanges={priceRangeOptions(base, currency, rate)}
         filters={panelState}
         onChange={(next) => go({ ...filters, ...next, page: 1 })}
       />

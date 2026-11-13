@@ -125,7 +125,7 @@ export default function AdminOrdersPage() {
                     {order.product?.title} × {order.quantity}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatPrice(order.total_price)}</td>
-                  <td className="hidden px-4 py-3 lg:table-cell"><PaymentBadge status={order.payment_status} /></td>
+                  <td className="hidden px-4 py-3 lg:table-cell"><PaymentBadge status={order.payment_status} demo={order.payment_demo} /></td>
                   <td className="px-4 py-3"><OrderStatusBadge status={order.status} /></td>
                   <td className="px-4 py-3 text-right">
                     <button type="button" onClick={() => open(order)} aria-label={`#${order.id} buyurtmani ochish`} className={buttonClass.icon}>
@@ -167,7 +167,10 @@ export default function AdminOrdersPage() {
             ))}
             <div className="col-span-2 flex items-center justify-between rounded-xl bg-secondary p-3">
               <dt className="text-xs text-muted-foreground">To&apos;lov</dt>
-              <dd><PaymentBadge status={selected.payment_status} /></dd>
+              <dd className="flex flex-wrap items-center justify-end gap-2">
+                <span className="text-sm font-medium">{selected.payment_method_display || "Qabul qilganda to'lash"}</span>
+                {selected.payment_status && <PaymentBadge status={selected.payment_status} demo={selected.payment_demo} />}
+              </dd>
             </div>
           </dl>
 

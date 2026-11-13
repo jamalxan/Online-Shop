@@ -4,7 +4,8 @@ import Image from "next/image"
 import Link from "next/link"
 import { Heart, ShoppingBag, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn, formatPrice } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 import { useStore } from "@/lib/store-context"
 
 interface ProductCardProps {
@@ -42,6 +43,7 @@ export function ProductCard({
                                 className,
                             }: ProductCardProps) {
     const { addToCart, addToWishlist, removeFromWishlist, isInWishlist, cart, showNotification } = useStore()
+    const { format } = useMoney()
 
     const isInCart = cart.some((item) => item.id === id)
     const inWishlist = isInWishlist(id)
@@ -166,11 +168,11 @@ export function ProductCard({
                     </h3>
                 </Link>
                 <div className="flex flex-wrap items-baseline gap-x-2 pt-1">
-                    <span className="text-lg font-semibold">{formatPrice(price)}</span>
+                    <span className="text-lg font-semibold">{format(price)}</span>
                     {originalPrice !== undefined && originalPrice > price && (
                         <span className="text-sm text-muted-foreground line-through">
                             <span className="sr-only">Avvalgi narx: </span>
-                            {formatPrice(originalPrice)}
+                            {format(originalPrice)}
                         </span>
                     )}
                 </div>

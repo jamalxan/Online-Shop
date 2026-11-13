@@ -178,6 +178,12 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 # Testlarda xabarlar sinxron yuboriladi (mail.outbox'da darhol ko'rinadi)
 NOTIFY_ASYNC = not TESTING
 
+# Onlayn to'lov usullari (Apple Pay, Google Pay, Click, Payme, Xazna) hali haqiqiy to'lov tizimiga
+# ulanmagan: yoqilgan bo'lsa, ular DEMO rejimda ishlaydi — pul yechilmaydi, to'lov "demo" deb yoziladi.
+# Haqiqiy savdoda chalkashlik bo'lmasligi uchun DEMO_PAYMENTS=False qilib o'chiring:
+# shunda saytda faqat "qabul qilganda to'lash" (va kartaga o'tkazma) qoladi.
+DEMO_PAYMENTS = env_bool('DEMO_PAYMENTS', True)
+
 # ─── CORS / CSRF ──────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', 'http://localhost:3000')
 # Lokal ishda Next.js band portdan keyingisiga (3001, 3002...) o'tib ketadi. ^ va $ shart:

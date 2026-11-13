@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { cn, formatPrice } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 import type { ColorVariant, StorageOption } from "@/lib/types"
 
 interface ProductTabsProps {
@@ -15,6 +16,7 @@ type TabId = "description" | "specs"
 
 /** Only real product data is shown here — there is no reviews backend, so no reviews/ratings. */
 export function ProductTabs({ description, category, storageOptions, colorVariants }: ProductTabsProps) {
+  const { format } = useMoney()
   const specs: { name: string; value: string }[] = []
   if (category) specs.push({ name: "Kategoriya", value: category })
   if (colorVariants.length > 0) {
@@ -23,7 +25,7 @@ export function ProductTabs({ description, category, storageOptions, colorVarian
   storageOptions.forEach((option) => {
     specs.push({
       name: option.ram ? `${option.storage} / ${option.ram}` : option.storage,
-      value: formatPrice(option.price),
+      value: format(option.price),
     })
   })
 

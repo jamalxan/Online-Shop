@@ -22,6 +22,7 @@ import type {
   Category,
   ColorVariant,
   DeliveryMethod,
+  PaymentMethod,
   OrderStatus,
   Paged,
   Product,
@@ -833,6 +834,7 @@ export interface CreateOrderPayload {
   phone_number: string
   address?: string
   delivery_method?: DeliveryMethod
+  payment_method?: PaymentMethod
   comment?: string
   from_cart?: boolean
   product_id?: number
@@ -899,7 +901,8 @@ export async function fetchPrivateImage(url: string): Promise<string | null> {
 // ─── Store info, newsletter, contact (public) ─────────────
 
 export const EMPTY_STORE_INFO: StoreInfo = {
-  store_name: 'AppleShop', currency: 'USD', phone: '', phone_secondary: '', email: '', address: '', working_hours: '',
+  store_name: 'AppleShop', currency: 'USD', usd_rate: 0, display_currency: '',
+  phone: '', phone_secondary: '', email: '', address: '', working_hours: '',
   telegram_url: '', instagram_url: '', delivery_note: '', card_payment: null,
 }
 

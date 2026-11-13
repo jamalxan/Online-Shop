@@ -3,7 +3,6 @@ import Link from "next/link"
 import { ArrowRight, BadgeCheck, Eye, Truck, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { HeroStage, type StageProduct } from "@/components/home/hero-stage"
-import type { Currency } from "@/lib/utils"
 
 const BADGES = [
   { icon: BadgeCheck, text: "Original mahsulotlar" },
@@ -18,12 +17,11 @@ const step = (index: number) => ({ "--i": index }) as CSSProperties
 interface HeroSectionProps {
   /** lowest price in the live catalogue — nothing in the hero is a made-up number */
   minPrice?: number
-  currency: Currency
   /** real products shown in front of the photograph */
   stageProducts?: StageProduct[]
 }
 
-export function HeroSection({ minPrice, currency, stageProducts = [] }: HeroSectionProps) {
+export function HeroSection({ minPrice, stageProducts = [] }: HeroSectionProps) {
   return (
     <section className="relative overflow-hidden bg-background pt-20">
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -66,7 +64,7 @@ export function HeroSection({ minPrice, currency, stageProducts = [] }: HeroSect
             ))}
           </ul>
 
-          <HeroStage products={stageProducts} minPrice={minPrice} currency={currency} />
+          <HeroStage products={stageProducts} minPrice={minPrice} />
         </div>
       </div>
     </section>

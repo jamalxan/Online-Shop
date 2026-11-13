@@ -1,6 +1,6 @@
 // Catalog filters live in the URL (shareable, crawlable, back-button friendly) and are applied by
 // the API. This module is the single place that reads and writes those URL parameters.
-import type { Currency } from './utils'
+import { convertPrice, formatPrice, type Currency } from './utils'
 
 export type CatalogSort = 'new' | 'price_asc' | 'price_desc' | 'discount'
 
@@ -75,7 +75,10 @@ export function activeFilterCount(filters: CatalogFilters): number {
   return filters.priceRanges.length + filters.storages.length + filters.colors.length + (filters.inStock ? 1 : 0)
 }
 
-/** Price bands offered in the filter panel. They depend on the currency the shop prices in. */
+/**
+ * Price bands offered in the filter panel, in the currency prices are entered in: the tokens go to
+ * the API as they are, so a filtered URL means the same thing whatever currency the visitor looks at.
+ */
 export const PRICE_RANGES: Record<Currency, { token: string; label: string }[]> = {
   USD: [
     { token: '0-500', label: '$500 gacha' },
@@ -89,4 +92,37 @@ export const PRICE_RANGES: Record<Currency, { token: string; label: string }[]> 
     { token: '10000000-20000000', label: "10 – 20 mln so'm" },
     { token: '20000000-', label: "20 mln so'mdan yuqori" },
   ],
+}
+
+/** "6 mln", "11,9 mln", "850 ming" — how a so'm amount is said, not its exact digits. */
+function soumShort(amount: number): { text: string; unit: string } {
+  if (amount >= 1_000_000) return { text: String(Math.round(amount / 100_000) / 10).replace('.', ','), unit: ' mln' }
+  if (amount >= 1_000) return { text: String(Math.round(amount / 1_000)), unit: ' ming' }
+  return { text: String(Math.round(amount)), unit: '' }
+}
+
+/**
+ * The same bands for a visitor who views prices in `display`. Only the labels are converted (and
+ * rounded to what a person would say); the tokens — and so the products that match — do not change.
+ */
+export function priceRangeOptions(base: Currency, display: Currency, usdRate: number): { token: string; label: string }[] {
+  if (base === display || !(usdRate > 0)) return PRICE_RANGES[base]
+  return PRICE_RANGES[base].map(({ token }) => {
+    const [from, to] = token.split('-')
+    const low = Number(from) > 0 ? convertPrice(from, base, display, usdRate) : null
+    const high = to ? convertPrice(to, base, display, usdRate) : null
+
+    if (display === 'USD') {
+      const text = (amount: number) => formatPrice(Math.round(amount), 'USD')
+      if (low === null) return { token, label: `${text(high ?? 0)} gacha` }
+      if (high === null) return { token, label: `${text(low)} dan yuqori` }
+      return { token, label: `${text(low)} – ${text(high)}` }
+    }
+
+    const a = low === null ? null : soumShort(low)
+    const b = high === null ? null : soumShort(high)
+    if (a && b) return { token, label: `${a.text}${a.unit === b.unit ? '' : a.unit} – ${b.text}${b.unit} so'm` }
+    if (b) return { token, label: `${b.text}${b.unit} so'mgacha` }
+    return { token, label: `${a?.text ?? '0'}${a?.unit ?? ''} so'mdan yuqori` }
+  })
 }

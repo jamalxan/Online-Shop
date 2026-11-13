@@ -1,7 +1,9 @@
+"use client"
+
 import Link from "next/link"
 import { ArrowRight, Banknote, Truck } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { formatPrice } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 
 interface CartSummaryProps {
   /** Sum of the cart lines (server-computed when logged in). */
@@ -14,6 +16,7 @@ interface CartSummaryProps {
  * No client-side promo codes, shipping fees or taxes — the backend has none of them.
  */
 export function CartSummary({ total, isLoggedIn }: CartSummaryProps) {
+  const { format } = useMoney()
   // Orders need an account; the guest cart is merged into the account cart after login.
   const checkoutHref = isLoggedIn ? "/checkout" : "/account?next=/checkout"
 
@@ -25,7 +28,7 @@ export function CartSummary({ total, isLoggedIn }: CartSummaryProps) {
         <div className="mt-6 space-y-3 border-t border-border pt-6">
           <div className="flex justify-between text-lg font-semibold">
             <span>Jami</span>
-            <span>{formatPrice(total)}</span>
+            <span>{format(total)}</span>
           </div>
           {!isLoggedIn && (
             <p className="text-xs text-muted-foreground">

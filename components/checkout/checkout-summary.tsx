@@ -1,6 +1,8 @@
+"use client"
+
 import Image from "next/image"
 import Link from "next/link"
-import { formatPrice } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 import type { CartItem } from "@/lib/store-context"
 
 interface CheckoutSummaryProps {
@@ -10,6 +12,7 @@ interface CheckoutSummaryProps {
 }
 
 export function CheckoutSummary({ items, total }: CheckoutSummaryProps) {
+  const { format } = useMoney()
   return (
     <div className="sticky top-24 space-y-6">
       <div className="rounded-2xl bg-background border border-border p-6">
@@ -50,10 +53,10 @@ export function CheckoutSummary({ items, total }: CheckoutSummaryProps) {
                   <p className="text-xs text-muted-foreground">{item.variantLabel}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {item.quantity} × {formatPrice(item.price)}
+                  {item.quantity} × {format(item.price)}
                 </p>
               </div>
-              <p className="font-medium text-sm">{formatPrice(item.lineTotal)}</p>
+              <p className="font-medium text-sm">{format(item.lineTotal)}</p>
             </li>
           ))}
         </ul>
@@ -62,7 +65,7 @@ export function CheckoutSummary({ items, total }: CheckoutSummaryProps) {
         <div className="mt-6 border-t border-border pt-6">
           <div className="flex justify-between text-lg font-semibold">
             <span>Jami</span>
-            <span>{formatPrice(total)}</span>
+            <span>{format(total)}</span>
           </div>
         </div>
       </div>

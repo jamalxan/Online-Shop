@@ -58,10 +58,41 @@ npm run dev                        # http://localhost:3000
 
 ## Valyuta
 
-**Admin → Sozlamalar → Narxlar valyutasi**: `USD` ("$1,099") yoki `UZS` ("13 500 000 so'm").
-Bu faqat ko'rsatish formatini o'zgartiradi — narxlar **qayta hisoblanmaydi**. So'mga o'tishdan
-oldin mahsulot (va xotira variantlari) narxlarini so'mda qayta kiriting. Sayt keshi tufayli
-o'zgarish mijozlarga 1 daqiqagacha kechikib ko'rinadi; admin panelda darhol.
+**Admin → Sozlamalar → Valyuta va kurs** — uchta sozlama:
+
+- **Narxlar valyutasi** — mahsulot narxlari qaysi valyutada *kiritilgani* (`USD` yoki `UZS`).
+  Bazadagi sonlarning birligi; o'zgartirish narxlarning o'zini qayta hisoblamaydi.
+- **Dollar kursi** — 1 AQSh dollari necha so'm (butun son). Saytdagi konvertatsiya shu kurs bilan.
+- **Saytda standart ko'rinish** — xaridor o'zi tanlamaguncha narxlar ko'rinadigan valyuta.
+
+Xaridor sayt tepasidagi «so'm / $» tugmasi bilan valyutani o'zi almashtiradi (tanlov uning
+brauzerida saqlanadi). Narx $79, kurs 12 000 bo'lsa, so'mda 948 000 so'm ko'rinadi.
+
+Buyurtma yaratilganda o'sha paytdagi kurs buyurtmaga yozib qo'yiladi: kurs keyin o'zgarsa ham
+mijoz ko'rgan summa (Buyurtmalarim, to'lov cheki) o'zgarmaydi. Admin panel narxlarni kiritilgan
+valyutada ko'rsatadi; To'lovlar bo'limida so'mdagi summa ham chiqadi. Xat va Telegram
+bildirishnomalari standart ko'rinish valyutasida yuboriladi.
+
+Sayt keshi tufayli o'zgarish mijozlarga 1 daqiqagacha kechikib ko'rinadi; admin panelda darhol.
+
+## To'lov usullari
+
+Checkout'da "To'lov" bosqichi bor:
+
+- **Qabul qilganda to'lash** — doim mavjud. Buyurtmadan keyin mijoz xohlasa kartaga o'tkazma
+  chekini yuklaydi (Admin → Sozlamalar'da karta kiritilgan bo'lsa).
+- **Apple Pay, Google Pay, Click, Payme, Xazna** — hozircha **demo**: haqiqiy to'lov tizimiga
+  ulanmagan, pul yechilmaydi, karta ma'lumoti so'ralmaydi. Mijozga to'lov oynasi ko'rsatiladi,
+  buyurtma esa "To'langan (demo)" bo'lib yoziladi. Admin panelda bunday to'lov
+  "Demo — pul tushmagan" deb ko'rinadi, xat va Telegram xabarida ham "demo" deb yoziladi —
+  summani mijozdan qabul qilganda olish kerak.
+
+Demo rejimni o'chirish: serverdagi `.env` da `DEMO_PAYMENTS=False`. Shunda onlayn usullar saytda
+ko'rinmaydi va server ularni qabul qilmaydi. Haqiqiy to'lov tizimi ulanganda demo yozuv
+o'rniga provayderning tasdig'i ishlatilishi kerak (`apps/services.py` → `create_orders`).
+
+Yetkazib berishda manzil majburiy: viloyat/shahar, tuman, ko'cha-uy (mo'ljal — ixtiyoriy).
+"Do'kondan olib ketish" tanlansa manzil so'ralmaydi.
 
 ## Testlar
 

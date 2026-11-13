@@ -19,10 +19,7 @@ def admin_orders():
 def orders_json(request, orders) -> list:
     return AdminOrderSerializer(
         orders, many=True,
-        context={
-            'request': request,
-            'payment_status': services.payment_status_by_checkout(o.checkout_id for o in orders),
-        },
+        context={'request': request, **services.order_payment_context(orders)},
     ).data
 
 

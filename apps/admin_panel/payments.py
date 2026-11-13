@@ -43,7 +43,7 @@ def payments_json(request, payments) -> list:
         for order in rows:
             by_checkout[order.checkout_id].append({
                 'id': order.pk, 'title': order.product.title, 'quantity': order.quantity,
-                'total_price': str(order.total_price), 'status': order.status,
+                'total_price': str(order.total_price), 'usd_rate': order.usd_rate, 'status': order.status,
             })
     return AdminPaymentSerializer(
         payments, many=True, context={'request': request, 'orders_by_checkout': by_checkout},

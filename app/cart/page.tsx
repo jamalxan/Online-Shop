@@ -10,7 +10,7 @@ import { CartSummary } from "@/components/cart/cart-summary"
 import { Button } from "@/components/ui/button"
 import { Minus, Plus, Trash2, Loader2 } from "lucide-react"
 import { useStore } from "@/lib/store-context"
-import { formatPrice } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 
 export default function CartPage() {
   const {
@@ -25,6 +25,7 @@ export default function CartPage() {
     isLoggedIn,
     authReady,
   } = useStore()
+  const { format } = useMoney()
 
   // id of the line with a request in flight (prevents double clicks racing each other)
   const [busyId, setBusyId] = useState<number | null>(null)
@@ -157,14 +158,14 @@ export default function CartPage() {
                                 </p>
                               )}
                               <p className="mt-1 text-sm text-muted-foreground sm:hidden">
-                                {formatPrice(item.price)}
+                                {format(item.price)}
                               </p>
                             </div>
                           </div>
 
                           {/* Price */}
                           <div className="hidden sm:block col-span-2 text-center">
-                            <span className="font-medium">{formatPrice(item.price)}</span>
+                            <span className="font-medium">{format(item.price)}</span>
                           </div>
 
                           {/* Quantity */}
@@ -197,7 +198,7 @@ export default function CartPage() {
                           {/* Total */}
                           <div className="col-span-2 mt-4 sm:mt-0 flex items-center justify-between sm:justify-end gap-4">
                             <span className="text-sm text-muted-foreground sm:hidden">Jami</span>
-                            <span className="font-semibold">{formatPrice(item.lineTotal)}</span>
+                            <span className="font-semibold">{format(item.lineTotal)}</span>
                           </div>
                         </div>
 

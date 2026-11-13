@@ -208,6 +208,14 @@ class Order(Model):
         EXPRESS = "express", "Tezkor yetkazib berish"
         PICKUP = "pickup", "Do'kondan olib ketish"
 
+    class PaymentMethod(TextChoices):
+        CASH = "cash", "Qabul qilganda to'lash"
+        APPLE_PAY = "apple_pay", "Apple Pay"
+        GOOGLE_PAY = "google_pay", "Google Pay"
+        CLICK = "click", "Click"
+        PAYME = "payme", "Payme"
+        XAZNA = "xazna", "Xazna"
+
     # PROTECT: mahsulot o'chirilganda buyurtmalar tarixi yo'qolmasligi kerak
     product = ForeignKey("apps.Product", verbose_name="Mahsulot", on_delete=PROTECT, related_name="orders")
     user = ForeignKey(
@@ -227,11 +235,16 @@ class Order(Model):
     color_name = CharField("Rang", max_length=100, blank=True, default="")
     unit_price = DecimalField("Dona narxi", max_digits=14, decimal_places=0, default=0)
     total_price = DecimalField("Jami narx", max_digits=16, decimal_places=0, default=0)
+    # Xarid paytidagi kurs: kurs keyin o'zgarsa ham mijoz ko'rgan summa o'zgarmaydi. 0 — noma'lum (eski buyurtma)
+    usd_rate = PositiveIntegerField("Xarid paytidagi dollar kursi", default=0)
 
     first_name = CharField("Ism", max_length=200)
     phone_number = CharField("Telefon raqami", max_length=20)
     address = TextField("Manzil", blank=True, default="")
     delivery_method = CharField("Yetkazish usuli", max_length=20, choices=Delivery.choices, default=Delivery.STANDARD)
+    payment_method = CharField(
+        "To'lov usuli", max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CASH,
+    )
     comment = TextField("Izoh", blank=True, default="")
     quantity = PositiveIntegerField("Miqdor", default=1)
     has_discount = BooleanField("Chegirma bilan sotib olinganmi", default=False)
@@ -287,6 +300,10 @@ class Payment(Model):
         'apps.User', verbose_name="Ko'rib chiqdi", on_delete=SET_NULL, related_name="+", null=True, blank=True,
     )
     type = CharField("To'lov turi", max_length=10, choices=PayType.choices, default=PayType.MONEY)
+    # Onlayn to'lov tizimi (Order.PaymentMethod qiymati). Bo'sh — kartaga o'tkazma (chek bilan)
+    provider = CharField("To'lov tizimi", max_length=20, blank=True, default="")
+    # Demo to'lov: haqiqiy pul tushmagan (to'lov tizimi hali ulanmagan)
+    is_demo = BooleanField("Demo to'lov", default=False)
     created_at = DateTimeField("Yaratilgan", auto_now_add=True)
     updated_at = DateTimeField("Yangilangan", auto_now=True)
     user = ForeignKey(
@@ -297,6 +314,10 @@ class Payment(Model):
         null=True,
         blank=True,
     )
+
+    @property
+    def provider_display(self) -> str:
+        return dict(Order.PaymentMethod.choices).get(self.provider, "Kartaga o'tkazma")
 
     class Meta:
         verbose_name = "To'lov"
@@ -379,11 +400,16 @@ STORE_SETTINGS_CACHE_KEY = "store_settings:v1"
 
 
 def format_money(value, currency: str = 'USD') -> str:
-    """Xat va bildirishnomalar uchun: "$1,099" yoki "13 500 000 so'm". Saytdagi format bilan bir xil."""
-    amount = int(Decimal(value or 0).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+    """
+    Xat va bildirishnomalar uchun, saytdagi format bilan bir xil:
+    "$1,099" (tiyinli bo'lsa "$989.50") yoki "13 500 000 so'm".
+    """
+    value = Decimal(value or 0)
     if currency == 'UZS':
+        amount = int(value.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
         return f"{amount:,}".replace(',', ' ') + " so'm"
-    return f"${amount:,}"
+    cents = value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return f"${cents:,.0f}" if cents == cents.to_integral_value() else f"${cents:,.2f}"
 
 
 class StoreSettings(Model):
@@ -394,9 +420,15 @@ class StoreSettings(Model):
     CURRENCIES = (('USD', 'AQSh dollari ($)'), ('UZS', "O'zbek so'mi (so'm)"))
 
     store_name = CharField("Do'kon nomi", max_length=100, default="AppleShop")
-    # Narxlar qaysi valyutada kiritilgani. O'zgartirish narxlarni qayta hisoblamaydi —
-    # faqat saytda va xatlarda qanday ko'rsatilishini belgilaydi.
-    currency = CharField("Valyuta", max_length=3, choices=CURRENCIES, default='USD')
+    # Mahsulot narxlari qaysi valyutada KIRITILGANI (bazadagi sonlarning birligi). Saytda qaysi
+    # valyutada ko'rinishi alohida: xaridor o'zi tanlaydi, tanlamagan bo'lsa — display_currency.
+    currency = CharField("Narxlar valyutasi", max_length=3, choices=CURRENCIES, default='USD')
+    # 1 AQSh dollari necha so'm. Butun son: dollardagi narx so'mga tiyinsiz, aniq o'tadi.
+    usd_rate = PositiveIntegerField(
+        "Dollar kursi (so'm)", default=12000,
+        validators=[MinValueValidator(1000), MaxValueValidator(1_000_000)],
+    )
+    display_currency = CharField("Saytda standart ko'rinish", max_length=3, choices=CURRENCIES, default='USD')
     phone = CharField("Telefon", max_length=30, blank=True, default="")
     phone_secondary = CharField("Qo'shimcha telefon", max_length=30, blank=True, default="")
     email = EmailField("Email", max_length=255, blank=True, default="")
@@ -430,6 +462,17 @@ class StoreSettings(Model):
     @property
     def card_payment_enabled(self) -> bool:
         return bool(self.payment_card_number.strip())
+
+    def money(self, value, rate=None) -> str:
+        """
+        Bazadagi summani (narxlar valyutasida) saytning standart ko'rinish valyutasida yozadi.
+        `rate` — buyurtmada saqlangan kurs; berilmasa (yoki 0 bo'lsa) joriy kurs olinadi.
+        """
+        amount, rate = Decimal(value or 0), Decimal(rate or self.usd_rate or 0)
+        if self.display_currency == self.currency or rate <= 0:
+            return format_money(amount, self.currency)
+        converted = amount * rate if self.currency == 'USD' else amount / rate
+        return format_money(converted, self.display_currency)
 
     def __str__(self):
         return self.store_name

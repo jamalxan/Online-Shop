@@ -6,8 +6,7 @@ import { BestSellersSection } from "@/components/home/best-sellers-section"
 import { NewArrivalsSection } from "@/components/home/new-arrivals-section"
 import { WhyChooseUsSection } from "@/components/home/why-choose-us-section"
 import { NewsletterSection } from "@/components/home/newsletter-section"
-import { getCategories, getProductFacets, getProductPageSafe, getStoreInfo } from "@/lib/api"
-import { toCurrency } from "@/lib/utils"
+import { getCategories, getProductFacets, getProductPageSafe } from "@/lib/api"
 import type { Product } from "@/lib/types"
 
 /** how many cards the catalogue block shows per tab */
@@ -32,12 +31,11 @@ function pickFlagships(byPriceDesc: Product[], limit: number) {
 export default async function HomePage() {
     // Bounded requests only (never the whole catalogue). Each one degrades to "empty" when the API
     // is unreachable, and the sections then hide themselves.
-    const [latest, dearest, facets, categories, store] = await Promise.all([
+    const [latest, dearest, facets, categories] = await Promise.all([
         getProductPageSafe({ pageSize: SHOWCASE_SIZE }),                 // newest first
         getProductPageSafe({ sort: "price_desc", pageSize: 12 }),        // flagships for the hero
         getProductFacets(),                                              // lowest price
         getCategories(),
-        getStoreInfo(),
     ])
 
     return (
@@ -46,7 +44,6 @@ export default async function HomePage() {
             <main id="main-content">
                 <HeroSection
                     minPrice={facets.minPrice ?? undefined}
-                    currency={toCurrency(store.currency)}
                     stageProducts={pickFlagships(dearest.results, STAGE_SIZE)}
                 />
                 <CategoriesSection />
@@ -55,7 +52,7 @@ export default async function HomePage() {
                     categories={categories.filter((c) => (c.productsCount ?? 0) > 0)}
                     pageSize={SHOWCASE_SIZE}
                 />
-                <NewArrivalsSection products={latest.results.slice(0, 6)} />
+                <NewArrivalsSection products={latest.results} />
                 {/* Removed from the page: invented reviews, instalment plans, trade-in and price-match
                     offers — none of them exist in the shop's system (see SETUP.md → "Kontent"). */}
                 <WhyChooseUsSection />

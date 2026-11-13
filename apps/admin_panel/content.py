@@ -116,11 +116,19 @@ class AdminStoreSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = StoreSettings
         fields = (
-            'store_name', 'currency', 'phone', 'phone_secondary', 'email', 'address', 'working_hours',
+            'store_name', 'currency', 'usd_rate', 'display_currency',
+            'phone', 'phone_secondary', 'email', 'address', 'working_hours',
             'telegram_url', 'instagram_url', 'delivery_note',
             'payment_card_number', 'payment_card_holder', 'updated_at',
         )
         read_only_fields = ('updated_at',)
+        extra_kwargs = {
+            'usd_rate': {'error_messages': {
+                'invalid': "Dollar kursi butun son bo'lishi kerak",
+                'min_value': "Dollar kursi juda kichik: 1 dollar necha so'm ekanini kiriting (masalan, 12000)",
+                'max_value': "Dollar kursi juda katta",
+            }},
+        }
 
     def _phone(self, value):
         value = (value or '').strip()

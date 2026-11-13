@@ -2,6 +2,7 @@
 import uuid
 from collections import defaultdict
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -105,6 +106,12 @@ def create_orders(user, data: dict) -> list[Order]:
     Buyurtma(lar) yaratadi. To'liq atomar: biror mahsulot yetmasa hech narsa saqlanmaydi.
     Narx faqat serverda hisoblanadi va buyurtmada saqlanadi (snapshot).
     """
+    payment_method = data.get('payment_method') or Order.PaymentMethod.CASH
+    pay_online = payment_method != Order.PaymentMethod.CASH
+    if pay_online and not settings.DEMO_PAYMENTS:
+        # Haqiqiy to'lov tizimi ulanmagan: demo o'chiq bo'lsa, to'lanmagan buyurtma "to'langan" bo'lib qolmasin
+        raise ShopError("Onlayn to'lov hozircha ulanmagan. «Qabul qilganda to'lash» usulini tanlang.")
+
     if data.get('from_cart'):
         cart = get_cart(user)
         lines = [
@@ -137,6 +144,7 @@ def create_orders(user, data: dict) -> list[Order]:
             raise ShopError(f"{product.title} uchun yetarli miqdor yo'q (omborda: {product.quantity})", 409)
 
     checkout_id = uuid.uuid4()
+    usd_rate = StoreSettings.load().usd_rate
     orders = []
     for product_id, storage, color, quantity in lines:
         product = products[product_id]
@@ -145,10 +153,10 @@ def create_orders(user, data: dict) -> list[Order]:
             product=product, user=user, checkout_id=checkout_id,
             storage_option=storage, color_variant=color,
             storage_label=_storage_label(storage), color_name=color.name if color else '',
-            unit_price=unit_price, total_price=unit_price * quantity,
+            unit_price=unit_price, total_price=unit_price * quantity, usd_rate=usd_rate,
             first_name=data['first_name'], phone_number=data['phone_number'],
             address=data.get('address', ''), delivery_method=data.get('delivery_method', Order.Delivery.STANDARD),
-            comment=data.get('comment', ''),
+            comment=data.get('comment', ''), payment_method=payment_method,
             quantity=quantity, has_discount=product.discount > 0,
         ))
 
@@ -157,6 +165,14 @@ def create_orders(user, data: dict) -> list[Order]:
 
     for order in orders:
         order.save()
+    if pay_online:
+        # DEMO: pul yechilmaydi. Summa serverda hisoblanadi; yozuv shu tranzaksiya ichida —
+        # buyurtma saqlanmasa, to'lov ham qolmaydi.
+        Payment.objects.create(
+            user=user, checkout_id=checkout_id, amount=sum(o.total_price for o in orders),
+            status=Payment.PayStatus.COMPLETED, type=Payment.PayType.MONEY,
+            provider=payment_method, is_demo=True,
+        )
     if cart is not None:
         cart.items.all().delete()
     return orders
@@ -209,18 +225,22 @@ def cancel_own_order(user, order_id: int) -> Order:
 _PAYMENT_PRIORITY = {Payment.PayStatus.COMPLETED: 0, Payment.PayStatus.REVIEW: 1, Payment.PayStatus.CANCELED: 2}
 
 
-def payment_status_by_checkout(checkout_ids) -> dict:
-    """{checkout_id: status} — buyurtmalar ro'yxati uchun bitta so'rov."""
-    ids = {cid for cid in checkout_ids if cid}
-    if not ids:
-        return {}
-    result: dict = {}
-    rows = Payment.objects.filter(checkout_id__in=ids).order_by().values_list('checkout_id', 'status')
-    for checkout_id, status in rows:
-        current = result.get(checkout_id)
-        if current is None or _PAYMENT_PRIORITY.get(status, 9) < _PAYMENT_PRIORITY.get(current, 9):
-            result[checkout_id] = status
-    return result
+def order_payment_context(orders) -> dict:
+    """
+    OrderSerializer context'i uchun, buyurtmalar ro'yxatiga bitta so'rov bilan:
+    `payment_status` — {checkout_id: status}; `payment_demo` — to'lovi demo bo'lgan checkout'lar.
+    """
+    ids = {o.checkout_id for o in orders if o.checkout_id}
+    statuses: dict = {}
+    demo: dict = {}
+    if ids:
+        rows = Payment.objects.filter(checkout_id__in=ids).order_by().values_list('checkout_id', 'status', 'is_demo')
+        for checkout_id, status, is_demo in rows:
+            current = statuses.get(checkout_id)
+            if current is None or _PAYMENT_PRIORITY.get(status, 9) < _PAYMENT_PRIORITY.get(current, 9):
+                statuses[checkout_id] = status
+                demo[checkout_id] = is_demo
+    return {'payment_status': statuses, 'payment_demo': {cid for cid, flag in demo.items() if flag}}
 
 
 @transaction.atomic

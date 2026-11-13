@@ -1,6 +1,7 @@
 """Do'kon ma'lumotlari, yangiliklarga obuna va murojaat formasi (ochiq endpointlar)."""
 import logging
 
+from django.conf import settings
 from django.core.cache import cache
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -27,7 +28,8 @@ class StoreInfoAPIView(APIView):
         if data is None:
             data = StoreInfoSerializer(StoreSettings.load()).data
             cache.set(STORE_SETTINGS_CACHE_KEY, data, STORE_INFO_TTL)
-        response = Response(data)
+        # server sozlamasi — keshlangan nusxaga emas, har javobga qo'shiladi
+        response = Response({**data, 'demo_payments': settings.DEMO_PAYMENTS})
         response['Cache-Control'] = 'public, max-age=60'
         return response
 

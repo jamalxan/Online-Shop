@@ -14,7 +14,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
 
-from apps.models import StoreSettings, format_money
+from apps.models import StoreSettings
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +45,18 @@ def _send_telegram(text: str) -> None:
     urllib.request.urlopen(request, timeout=5).close()
 
 
-def _order_lines(items: list[dict], currency: str) -> str:
+def _order_lines(items: list[dict]) -> str:
     lines = []
     for item in items:
         variant = ' · '.join(v for v in (item['storage'], item['color']) if v)
         title = f"{item['title']} ({variant})" if variant else item['title']
-        lines.append(f"• {title} × {item['quantity']} — {format_money(item['total'], currency)}")
+        lines.append(f"• {title} × {item['quantity']} — {item['total']}")
     return '\n'.join(lines)
 
 
 def _deliver_order_created(payload: dict) -> None:
-    lines = _order_lines(payload['items'], payload['currency'])
-    total = format_money(payload['total'], payload['currency'])
+    lines = _order_lines(payload['items'])
+    total = payload['total']
     numbers = ', '.join(f"#{n}" for n in payload['order_ids'])
 
     if payload['customer_email']:
@@ -65,7 +65,8 @@ def _deliver_order_created(payload: dict) -> None:
             message=(
                 f"Assalomu alaykum, {payload['first_name']}!\n\n"
                 f"Buyurtmangiz qabul qilindi:\n{lines}\n\nJami: {total}\n"
-                f"Yetkazib berish: {payload['delivery']}\n\n"
+                f"Yetkazib berish: {payload['delivery']}\n"
+                f"To'lov: {payload['payment']}\n\n"
                 f"Holatini \"Buyurtmalarim\" bo'limida kuzatishingiz mumkin.\n\n{payload['store_name']}"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
@@ -76,7 +77,8 @@ def _deliver_order_created(payload: dict) -> None:
     staff_text = (
         f"Yangi buyurtma {numbers}\n{lines}\nJami: {total}\n"
         f"Mijoz: {payload['first_name']}, {payload['phone']}\n"
-        f"Yetkazib berish: {payload['delivery']}"
+        f"Yetkazib berish: {payload['delivery']}\n"
+        f"To'lov: {payload['payment']}"
         + (f"\nManzil: {payload['address']}" if payload['address'] else '')
     )
     if settings.ORDER_NOTIFY_EMAILS:
@@ -96,21 +98,25 @@ def notify_order_created(orders, store: StoreSettings | None = None) -> None:
         return
     store = store or StoreSettings.load()
     first = orders[0]
+    # Summalar shu yerda matnga aylanadi: saytning standart valyutasida, buyurtmada saqlangan kurs bilan
     payload = {
         'order_ids': [o.pk for o in orders],
         'items': [
             {'title': o.product.title, 'storage': o.storage_label, 'color': o.color_name,
-             'quantity': o.quantity, 'total': o.total_price}
+             'quantity': o.quantity, 'total': store.money(o.total_price, o.usd_rate)}
             for o in orders
         ],
-        'total': sum(o.total_price for o in orders),
+        'total': store.money(sum(o.total_price for o in orders), first.usd_rate),
         'first_name': first.first_name,
         'phone': first.phone_number,
         'address': first.address,
         'delivery': first.get_delivery_method_display(),
+        # Onlayn usullar hozircha demo: xodim "to'langan" deb o'ylab qolmasligi uchun ochiq yoziladi
+        'payment': first.get_payment_method_display() + (
+            '' if first.payment_method == first.PaymentMethod.CASH else " (demo — pul yechilmagan)"
+        ),
         'customer_email': (first.user.email or '') if first.user_id else '',
         'store_name': store.store_name,
-        'currency': store.currency,
     }
     transaction.on_commit(lambda: _run(_deliver_order_created, payload))
 

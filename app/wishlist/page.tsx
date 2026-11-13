@@ -7,10 +7,11 @@ import { Footer } from "@/components/layout/footer"
 import { Button } from "@/components/ui/button"
 import { Heart, ShoppingBag, Trash2, ArrowRight, ChevronRight } from "lucide-react"
 import { useStore } from "@/lib/store-context"
-import { formatPrice } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 
 export default function WishlistPage() {
   const { wishlist, removeFromWishlist, addToCart } = useStore()
+  const { format } = useMoney()
 
   // sequential, so every removal sees the previous one applied
   async function clearAll() {
@@ -103,10 +104,10 @@ export default function WishlistPage() {
                             </h3>
                           </Link>
                           <div className="mt-2 flex items-baseline gap-2">
-                            <span className="text-lg font-semibold">{formatPrice(item.price)}</span>
+                            <span className="text-lg font-semibold">{format(item.price)}</span>
                             {item.originalPrice && (
                                 <span className="text-sm text-muted-foreground line-through">
-                          {formatPrice(item.originalPrice)}
+                          {format(item.originalPrice)}
                         </span>
                             )}
                           </div>

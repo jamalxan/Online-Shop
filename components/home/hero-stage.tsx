@@ -4,7 +4,8 @@ import { useEffect, useRef, type CSSProperties } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { clamp, createLoop, hasFinePointer, lerp, prefersReducedMotion } from "@/lib/motion"
-import { cn, formatPrice, type Currency } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 
 export interface StageProduct {
   id: string
@@ -17,7 +18,6 @@ interface HeroStageProps {
   /** up to three real catalogue products that stand off the photograph */
   products: StageProduct[]
   minPrice?: number
-  currency: Currency
 }
 
 // The same numbers as the resting state in globals.css (.hero-stage…): the script starts from
@@ -56,7 +56,8 @@ const SLOTS = [
  * different depths, so they shift against the picture as it turns, and the whole stage leans a
  * few degrees toward a mouse. Scroll position and pointer are the only inputs — nothing loops.
  */
-export function HeroStage({ products, minPrice, currency }: HeroStageProps) {
+export function HeroStage({ products, minPrice }: HeroStageProps) {
+  const { format } = useMoney()
   const stageRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -183,7 +184,7 @@ export function HeroStage({ products, minPrice, currency }: HeroStageProps) {
             className="hero-stage__float bottom-3 left-3 rounded-2xl bg-background px-4 py-3 shadow-lg sm:bottom-6 sm:left-6"
           >
             <p className="text-sm text-muted-foreground">Narxlar</p>
-            <p className="font-semibold">{formatPrice(minPrice, currency)} dan boshlab</p>
+            <p className="font-semibold">{format(minPrice)} dan boshlab</p>
           </div>
         )}
 
@@ -208,7 +209,7 @@ export function HeroStage({ products, minPrice, currency }: HeroStageProps) {
               </span>
               <span className="block min-w-0 sm:mt-3">
                 <span className="block truncate text-sm font-medium sm:line-clamp-2 sm:whitespace-normal">{product.name}</span>
-                <span className="block text-sm font-semibold">{formatPrice(product.price, currency)}</span>
+                <span className="block text-sm font-semibold">{format(product.price)}</span>
               </span>
             </Link>
           )

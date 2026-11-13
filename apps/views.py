@@ -53,10 +53,7 @@ def revoke_refresh_tokens(user) -> None:
 
 def order_context(request, orders) -> dict:
     """OrderSerializer uchun context: to'lov holatlari bitta so'rov bilan."""
-    return {
-        'request': request,
-        'payment_status': services.payment_status_by_checkout(o.checkout_id for o in orders),
-    }
+    return {'request': request, **services.order_payment_context(orders)}
 
 
 def active_products():

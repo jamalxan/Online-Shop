@@ -104,6 +104,8 @@ export interface ApiCart {
 
 export type OrderStatus = "pending" | "preparing" | "shipping" | "delivered" | "canceled"
 export type DeliveryMethod = "standard" | "express" | "pickup"
+/** "cash" — qabul qilganda; qolganlari onlayn usullar (hozircha faqat demo rejimda ishlaydi). */
+export type PaymentMethod = "cash" | "apple_pay" | "google_pay" | "click" | "payme" | "xazna"
 
 export interface ApiOrder {
     id: number
@@ -112,6 +114,8 @@ export interface ApiOrder {
     quantity: number
     unit_price: string
     total_price: string
+    /** Xarid paytidagi dollar kursi (0 yoki yo'q — eski buyurtma: joriy kurs olinadi). */
+    usd_rate?: number
     storage_label?: string | null
     color_name?: string | null
     address?: string | null
@@ -122,8 +126,12 @@ export interface ApiOrder {
     status_display: string
     created_at: string
     updated_at: string
-    /** Kartaga o'tkazma cheki holati (shu checkout uchun); to'lov yuborilmagan bo'lsa null. */
+    payment_method?: PaymentMethod | string
+    payment_method_display?: string
+    /** To'lov holati (shu checkout uchun: onlayn to'lov yoki kartaga o'tkazma cheki); to'lov yo'q bo'lsa null. */
     payment_status?: PaymentStatus | null
+    /** To'lov demo rejimda "o'tgan": haqiqiy pul yechilmagan. */
+    payment_demo?: boolean
     // Not guaranteed by the contract — rendered only when present.
     first_name?: string
     phone_number?: string
@@ -140,6 +148,11 @@ export interface ApiPayment {
     amount: string
     status: PaymentStatus
     status_display: string
+    /** Onlayn to'lov tizimi; "" — kartaga o'tkazma (chek bilan). */
+    provider?: string
+    provider_display?: string
+    /** Demo to'lov: haqiqiy pul tushmagan. */
+    is_demo?: boolean
     note: string
     receipt_url: string | null
     created_at: string
@@ -150,14 +163,18 @@ export interface AdminPayment extends ApiPayment {
     user_email: string | null
     user_name: string
     reviewed_by_email: string | null
-    orders: { id: number; title: string; quantity: number; total_price: string; status: OrderStatus }[]
+    orders: { id: number; title: string; quantity: number; total_price: string; usd_rate?: number; status: OrderStatus }[]
 }
 
 /** Do'kon aloqa ma'lumotlari — admin paneldan boshqariladi; bo'sh maydon ko'rsatilmaydi. */
 export interface StoreInfo {
     store_name: string
-    /** Narxlar kiritilgan valyuta: "USD" yoki "UZS". */
+    /** Narxlar kiritilgan valyuta: "USD" yoki "UZS". API'dagi barcha summalar shu valyutada. */
     currency: string
+    /** 1 AQSh dollari necha so'm (0 — noma'lum: konvertatsiya qilinmaydi). */
+    usd_rate: number
+    /** Xaridor o'zi tanlamaguncha narxlar ko'rinadigan valyuta ("" — `currency` bilan bir xil). */
+    display_currency: string
     phone: string
     phone_secondary: string
     email: string
@@ -167,9 +184,11 @@ export interface StoreInfo {
     instagram_url: string
     delivery_note: string
     card_payment: { card_number: string; card_holder: string } | null
+    /** Onlayn to'lov usullari demo rejimda yoqilgan (haqiqiy to'lov tizimi ulanmagan). */
+    demo_payments?: boolean
 }
 
-export interface AdminStoreSettings extends Omit<StoreInfo, "card_payment"> {
+export interface AdminStoreSettings extends Omit<StoreInfo, "card_payment" | "demo_payments"> {
     payment_card_number: string
     payment_card_holder: string
     updated_at: string

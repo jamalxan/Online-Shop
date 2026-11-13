@@ -15,16 +15,18 @@ export function toNumber(value: string | number | null | undefined): number {
 const wholeFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 const centsFormatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** The currency prices are entered in. One shop-wide setting (Admin → Sozlamalar). */
 export type Currency = 'USD' | 'UZS'
 
 export function toCurrency(value: unknown): Currency {
   return value === 'UZS' ? 'UZS' : 'USD'
 }
 
-// Client components read the shop currency from here; StoreProvider sets it (during SSR and in
-// the browser) before any of its children render. It is a single shop-wide value, so sharing it
-// between requests on the server is safe. Server components pass the currency explicitly.
+// The currency prices are ENTERED in (Admin → Sozlamalar) — the unit of every amount the API returns.
+// The admin panel types and reads prices in it, through formatPrice()'s default. StoreProvider sets
+// it (during SSR and in the browser) before any of its children render; it is a single shop-wide
+// value, so sharing it between requests on the server is safe.
+// The storefront does not use it: what a visitor sees is converted into the currency they picked
+// (lib/currency.ts → useMoney).
 let activeCurrency: Currency = 'USD'
 let pinned = false
 
@@ -61,6 +63,52 @@ export function formatPrice(value: string | number | null | undefined, currency:
   }
   const amount = Math.round(toNumber(value) * 100) / 100
   return `$${(Number.isInteger(amount) ? wholeFormatter : centsFormatter).format(amount)}`
+}
+
+/**
+ * Converts between the two currencies at `usdRate` so'm per dollar. Without a usable rate the
+ * amount comes back as it is — callers then show it in the currency it was entered in.
+ */
+export function convertPrice(
+  value: string | number | null | undefined, from: Currency, to: Currency, usdRate: number,
+): number {
+  const amount = toNumber(value)
+  if (from === to || !(usdRate > 0)) return amount
+  return from === 'USD' ? amount * usdRate : amount / usdRate
+}
+
+/** The part of the shop settings that decides how a price is shown. */
+export interface PriceSettings {
+  /** currency prices are entered in */
+  currency: string
+  /** so'm per US dollar; 0 / missing = unknown, nothing is converted */
+  usd_rate?: number | string | null
+  /** what a visitor sees until they choose for themselves */
+  display_currency?: string | null
+}
+
+export interface PriceView {
+  /** currency the amounts from the API are in */
+  base: Currency
+  /** currency they are shown in */
+  currency: Currency
+  /** so'm per dollar (0 = no conversion possible) */
+  rate: number
+}
+
+/** `choice` is the visitor's own pick, if they made one. Without a rate everything stays in `base`. */
+export function resolvePriceView(store: PriceSettings, choice?: Currency | null): PriceView {
+  const base = toCurrency(store.currency)
+  const rate = toNumber(store.usd_rate)
+  if (!(rate > 0)) return { base, currency: base, rate: 0 }
+  const fallback = store.display_currency ? toCurrency(store.display_currency) : base
+  return { base, currency: choice ?? fallback, rate }
+}
+
+/** A price as the shop shows it by default — for server components and metadata, where no visitor choice exists. */
+export function formatStorePrice(value: string | number | null | undefined, store: PriceSettings): string {
+  const { base, currency, rate } = resolvePriceView(store)
+  return formatPrice(convertPrice(value, base, currency, rate), currency)
 }
 
 /**

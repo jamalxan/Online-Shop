@@ -7,7 +7,7 @@ import { ProductView } from "@/components/product/product-view"
 import { ProductTabs } from "@/components/product/product-tabs"
 import { RelatedProducts } from "@/components/product/related-products"
 import { categorySlug, getProductById, getRelatedProducts, getStoreInfo } from "@/lib/api"
-import { formatPrice, toCurrency } from "@/lib/utils"
+import { formatStorePrice } from "@/lib/utils"
 
 // One fetch per request, shared by generateMetadata and the page.
 const loadProduct = cache((id: string) => getProductById(id))
@@ -20,11 +20,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const product = await loadProduct(id).catch(() => null)
   if (!product) return { title: "Mahsulot topilmadi", robots: { index: false } }
 
-  // a server component has no StoreProvider above it: the shop currency is passed explicitly
-  const { currency } = await getStoreInfo()
+  // Metadata is the same for every visitor: the price is in the shop's default display currency.
+  const store = await getStoreInfo()
   const description =
     product.description?.replace(/\s+/g, " ").trim().slice(0, 160) ||
-    `${product.name} — ${formatPrice(product.price, toCurrency(currency))}. AppleShop'da xarid qiling.`
+    `${product.name} — ${formatStorePrice(product.price, store)}. AppleShop'da xarid qiling.`
 
   return {
     title: product.name,

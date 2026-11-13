@@ -11,7 +11,9 @@ import type { ApiOrder, ApiPayment, PaymentStatus, StoreInfo } from "@/lib/types
 import { ChevronRight, CreditCard, Package, Loader2, ShoppingBag, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store-context"
-import { formatDate, formatPrice, toNumber } from "@/lib/utils"
+import { formatDate, toNumber } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
+import { isOnlinePayment, paymentMethodName } from "@/lib/payments"
 
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024
 
@@ -25,14 +27,17 @@ const PAYMENT_LABELS: Record<PaymentStatus, { text: string; className: string }>
  * Optional prepayment by card transfer. Shown only when the shop has published a card
  * (admin → Sozlamalar). The amount is fixed by the server — the customer only attaches the receipt.
  */
-function PrepayPanel({ checkoutId, amount, card, rejectedNote, onSent }: {
+function PrepayPanel({ checkoutId, amount, rate, card, rejectedNote, onSent }: {
   checkoutId: string
   amount: number
+  /** exchange rate the checkout was placed at */
+  rate?: number
   card: NonNullable<StoreInfo["card_payment"]>
   rejectedNote?: string
   onSent: () => void
 }) {
   const inputId = useId()
+  const { currency, format, formatIn } = useMoney()
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -70,7 +75,11 @@ function PrepayPanel({ checkoutId, amount, card, rejectedNote, onSent }: {
         <p className="mt-2 text-sm text-red-800">Oldingi chek rad etildi: {rejectedNote}</p>
       )}
       <p className="mt-2 text-sm text-muted-foreground">
-        <span className="font-semibold text-foreground">{formatPrice(amount)}</span> ni quyidagi kartaga o&apos;tkazing va chek rasmini yuklang.
+        <span className="font-semibold text-foreground">
+          {format(amount, rate)}
+          {/* the card is a so'm card: someone reading prices in dollars still needs the so'm sum */}
+          {currency === "USD" && formatIn(amount, "UZS", rate) !== null && ` (${formatIn(amount, "UZS", rate)})`}
+        </span> ni quyidagi kartaga o&apos;tkazing va chek rasmini yuklang.
         To&apos;lamasangiz ham bo&apos;ladi — buyurtmani qabul qilganda to&apos;laysiz.
       </p>
       <p className="mt-3 font-mono text-base tracking-wider">{card.card_number}</p>
@@ -108,6 +117,7 @@ const DELIVERY_LABELS: Record<string, string> = {
 export default function OrdersPage() {
   const router = useRouter()
   const { user, authReady, showNotification } = useStore()
+  const { format } = useMoney()
   const [orders, setOrders] = useState<ApiOrder[]>([])
   const [payments, setPayments] = useState<ApiPayment[]>([])
   // Payment requisites are read fresh on every load — never from the cached page shell.
@@ -245,7 +255,7 @@ export default function OrdersPage() {
                           {variant && <p className="text-sm text-muted-foreground">{variant}</p>}
                           {/* price snapshot taken at purchase time, not the current product price */}
                           <p className="text-sm text-muted-foreground">
-                            {order.quantity} dona × {formatPrice(order.unit_price)}
+                            {order.quantity} dona × {format(order.unit_price, order.usd_rate)}
                           </p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             #{order.id} · {formatDate(order.created_at)}
@@ -260,11 +270,16 @@ export default function OrdersPage() {
                         <span className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[order.status] ?? "bg-secondary text-foreground"}`}>
                           {order.status_display}
                         </span>
-                        <span className="font-semibold">{formatPrice(order.total_price)}</span>
+                        <span className="font-semibold">{format(order.total_price, order.usd_rate)}</span>
                         {order.payment_status && PAYMENT_LABELS[order.payment_status] && (
                           <span className={`rounded-full px-3 py-1 text-xs font-medium ${PAYMENT_LABELS[order.payment_status].className}`}>
                             {PAYMENT_LABELS[order.payment_status].text}
+                            {/* a demo payment took no money: never shown as a plain "paid" */}
+                            {order.payment_demo && " (demo)"}
                           </span>
+                        )}
+                        {isOnlinePayment(order.payment_method) && (
+                          <span className="text-xs text-muted-foreground">{paymentMethodName(order.payment_method)} orqali</span>
                         )}
                       </div>
                     </div>
@@ -273,6 +288,7 @@ export default function OrdersPage() {
                       <PrepayPanel
                         checkoutId={order.checkout_id}
                         amount={prepay.get(order.checkout_id)!.amount}
+                        rate={order.usd_rate}
                         card={card}
                         rejectedNote={order.payment_status === "canceled" ? rejectionNote(order.checkout_id) : undefined}
                         onSent={() => { showNotification("Chek yuborildi. Tekshirilgach, holat yangilanadi.", "success"); void load() }}

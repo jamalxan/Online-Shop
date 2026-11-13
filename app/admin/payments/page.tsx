@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { Check, CreditCard, Eye, ImageOff, X } from "lucide-react"
+import { Check, CreditCard, Eye, FlaskConical, ImageOff, X } from "lucide-react"
 import {
   EmptyState, ErrorBanner, Field, FilterTabs, Modal, PageHeader, Pagination, Panel, PaymentBadge,
   SkeletonRows, Spinner, buttonClass, inputClass, useLoader,
 } from "@/components/admin/ui"
 import { adminGetPayments, adminReviewPayment, fetchPrivateImage } from "@/lib/api"
-import { cn, formatDate, formatPrice } from "@/lib/utils"
+import { useStore } from "@/lib/store-context"
+import { cn, convertPrice, formatDate, formatPrice, getActiveCurrency, toNumber } from "@/lib/utils"
 import type { AdminPayment } from "@/lib/types"
 
 type Filter = "review" | "complete" | "canceled" | "all"
@@ -60,8 +61,14 @@ export default function AdminPaymentsPage() {
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState("")
 
+  // So'm equivalent of a payment: only when prices are entered in dollars. The rate is the one the
+  // orders were placed at (what the customer was shown); today's rate for orders older than that field.
+  const { store } = useStore()
+  const soumRate = (payment: AdminPayment) =>
+    getActiveCurrency() === "USD" ? payment.orders[0]?.usd_rate || toNumber(store.usd_rate) : 0
+
   const payments = data?.results ?? []
-  const counts = data ? { ...data.status_counts, all: Object.values(data.status_counts).reduce((a, b) => a + b, 0) } : undefined
+  const counts =data ? { ...data.status_counts, all: Object.values(data.status_counts).reduce((a, b) => a + b, 0) } : undefined
 
   function open(payment: AdminPayment) {
     setNote(payment.note ?? "")
@@ -109,6 +116,7 @@ export default function AdminPaymentsPage() {
                   <td className="px-4 py-3">
                     <p className="font-mono text-xs font-semibold">#{payment.id}</p>
                     <p className="text-xs text-muted-foreground">{formatDate(payment.created_at, true)}</p>
+                    <p className="text-xs text-muted-foreground">{payment.provider_display || "Kartaga o'tkazma"}</p>
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium">{payment.user_name || payment.user_email || "—"}</p>
@@ -118,7 +126,7 @@ export default function AdminPaymentsPage() {
                     {payment.orders.map((order) => `#${order.id}`).join(", ") || "—"}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatPrice(payment.amount)}</td>
-                  <td className="px-4 py-3"><PaymentBadge status={payment.status} /></td>
+                  <td className="px-4 py-3"><PaymentBadge status={payment.status} demo={payment.is_demo} /></td>
                   <td className="px-4 py-3 text-right">
                     <button type="button" onClick={() => open(payment)} aria-label={`#${payment.id} to'lovni ko'rish`} className={buttonClass.icon}>
                       <Eye className="h-4 w-4" aria-hidden="true" />
@@ -156,12 +164,27 @@ export default function AdminPaymentsPage() {
           ) : undefined}
         >
           <div className="grid gap-5 md:grid-cols-2">
-            <Receipt url={selected.receipt_url} />
+            {selected.is_demo ? (
+              <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-xl bg-amber-50 p-5 text-center text-sm text-amber-900">
+                <FlaskConical className="h-6 w-6" aria-hidden="true" />
+                <p className="font-semibold">{selected.provider_display} — demo to&apos;lov</p>
+                <p>Bu to&apos;lov tizimi hali ulanmagan: haqiqiy pul tushmagan. Summani mijozdan qabul qilganda oling.</p>
+              </div>
+            ) : (
+              <Receipt url={selected.receipt_url} />
+            )}
             <div className="space-y-4 text-sm">
               <dl className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 rounded-xl bg-foreground p-4 text-background">
                   <dt className="text-xs text-background/70">To&apos;lanishi kerak bo&apos;lgan summa</dt>
                   <dd className="mt-1 font-serif text-3xl tabular-nums text-background">{formatPrice(selected.amount)}</dd>
+                  {/* the receipt is for a so'm transfer: show the sum the customer was asked to send */}
+                  {soumRate(selected) > 0 && (
+                    <dd className="mt-1 text-sm tabular-nums text-background/70">
+                      = {formatPrice(convertPrice(selected.amount, "USD", "UZS", soumRate(selected)), "UZS")}
+                      {" "}(kurs: {formatPrice(soumRate(selected), "UZS")})
+                    </dd>
+                  )}
                 </div>
                 <div className="rounded-xl bg-secondary p-3">
                   <dt className="text-xs text-muted-foreground">Mijoz</dt>
@@ -169,7 +192,7 @@ export default function AdminPaymentsPage() {
                 </div>
                 <div className="rounded-xl bg-secondary p-3">
                   <dt className="text-xs text-muted-foreground">Holat</dt>
-                  <dd className="mt-1"><PaymentBadge status={selected.status} /></dd>
+                  <dd className="mt-1"><PaymentBadge status={selected.status} demo={selected.is_demo} /></dd>
                 </div>
               </dl>
 

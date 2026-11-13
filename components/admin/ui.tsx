@@ -323,8 +323,19 @@ export const PAYMENT_STATUS: Record<PaymentStatus, { label: string; className: s
   canceled: { label: "Rad etilgan",    className: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200" },
 }
 
-export function PaymentBadge({ status }: { status: PaymentStatus | null | undefined }) {
+/**
+ * `demo`: the payment went through a payment method that is not connected to a real provider —
+ * no money arrived. It is never shown as a plain "paid", so staff do not hand goods over as prepaid.
+ */
+export function PaymentBadge({ status, demo = false }: { status: PaymentStatus | null | undefined; demo?: boolean }) {
   if (!status) return <span className="text-xs text-muted-foreground">Qabul qilganda</span>
+  if (demo) {
+    return (
+      <span className="inline-flex w-fit items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">
+        Demo — pul tushmagan
+      </span>
+    )
+  }
   const config = PAYMENT_STATUS[status]
   return (
     <span className={cn("inline-flex w-fit items-center rounded-full px-2.5 py-1 text-xs font-medium", config?.className ?? "bg-secondary")}>

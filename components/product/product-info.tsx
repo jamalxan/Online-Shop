@@ -7,7 +7,8 @@ import {
   CreditCard, Check, Minus, Plus, MessageCircle, Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn, formatPrice, isLightHex, safeHex } from "@/lib/utils"
+import { cn, isLightHex, safeHex } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 import { useStore } from "@/lib/store-context"
 import type { ColorVariant, Product, StorageOption } from "@/lib/types"
 
@@ -24,6 +25,7 @@ function storageText(option: StorageOption): string {
 
 export function ProductInfo({ product, categoryHref, selectedColor, onColorChange }: ProductInfoProps) {
   const { addToCart, addToWishlist, removeFromWishlist, isInWishlist } = useStore()
+  const { format } = useMoney()
 
   const colorVariants = product.colorVariants ?? []
   const storageOptions = product.storageOptions ?? []
@@ -126,11 +128,11 @@ export function ProductInfo({ product, categoryHref, selectedColor, onColorChang
       {/* Price */}
       <div className="mt-6">
         <div className="flex items-baseline gap-3 flex-wrap">
-          <span className="text-3xl font-semibold">{formatPrice(activePrice)}</span>
+          <span className="text-3xl font-semibold">{format(activePrice)}</span>
           {activeOriginal !== undefined && activeOriginal > activePrice && (
             <span className="text-lg text-muted-foreground line-through">
               <span className="sr-only">Avvalgi narx: </span>
-              {formatPrice(activeOriginal)}
+              {format(activeOriginal)}
             </span>
           )}
           {selectedStorage && (
@@ -213,7 +215,7 @@ export function ProductInfo({ product, categoryHref, selectedColor, onColorChang
                 >
                   <span className="font-semibold">{option.label}</span>
                   <span className={cn("ml-2 text-xs", isSelected ? "text-background/70" : "text-muted-foreground")}>
-                    {formatPrice(option.price)}
+                    {format(option.price)}
                   </span>
                 </button>
               )
@@ -268,7 +270,7 @@ export function ProductInfo({ product, categoryHref, selectedColor, onColorChang
             <>
               Savatga qo&apos;shish
               {/* the price is shown above; on very narrow phones a so'm amount would push the button off-screen */}
-              <span className="max-[380px]:hidden">&nbsp;· {formatPrice(activePrice)}</span>
+              <span className="max-[380px]:hidden">&nbsp;· {format(activePrice)}</span>
             </>
           ) : "Tugagan"}
         </Button>

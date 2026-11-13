@@ -59,7 +59,7 @@ export default function CheckoutPage() {
             <div className="mb-8">
               <h1 className="font-serif text-3xl sm:text-4xl">Buyurtmani rasmiylashtirish</h1>
               {!orderPlaced && (
-                <p className="mt-2 text-muted-foreground">To'lov mahsulotni qabul qilganda amalga oshiriladi</p>
+                <p className="mt-2 text-muted-foreground">Manzil va to'lov usulini keyingi bosqichlarda tanlaysiz</p>
               )}
             </div>
 
@@ -67,6 +67,7 @@ export default function CheckoutPage() {
               <div className={orderPlaced ? "lg:col-span-3 mx-auto w-full max-w-2xl" : "lg:col-span-2"}>
                 <CheckoutForm
                   user={user}
+                  total={cartTotal}
                   onSuccess={() => {
                     setOrderPlaced(true)
                     void refreshCart() // the server cart was turned into orders

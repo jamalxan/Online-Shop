@@ -6,7 +6,9 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Search, ShoppingBag, Heart, User, Menu, X, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn, formatPrice } from "@/lib/utils"
+import { CurrencySwitch } from "@/components/currency-switch"
+import { cn } from "@/lib/utils"
+import { useMoney } from "@/lib/currency"
 import { useStore } from "@/lib/store-context"
 import { searchProducts } from "@/lib/api"
 import type { Product } from "@/lib/types"
@@ -17,6 +19,7 @@ const MAX_SUGGESTIONS = 6
 export function Header() {
   const router = useRouter()
   const { cartCount, categories } = useStore()
+  const { format } = useMoney()
 
   // Real categories from the API (plus the full catalogue link)
   const navigation = [
@@ -150,6 +153,8 @@ export function Header() {
 
               {/* Actions */}
               <div className="flex items-center gap-1 sm:gap-2">
+                {/* below 640px there is no room next to the icons: the switch is in the menu instead */}
+                <CurrencySwitch className="hidden sm:inline-flex" />
                 <Button
                     variant="ghost"
                     size="icon"
@@ -224,6 +229,10 @@ export function Header() {
                   {item.name}
                 </Link>
             ))}
+            <div className="flex items-center justify-between gap-4 border-b border-border py-4">
+              <span className="text-base font-medium">Narxlar valyutasi</span>
+              <CurrencySwitch size="lg" />
+            </div>
             <div className="flex items-center gap-4 pt-8">
               <Button variant="outline" size="lg" className="flex-1" asChild>
                 <Link href="/account" onClick={() => setIsMobileMenuOpen(false)}>
@@ -303,7 +312,7 @@ export function Header() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium truncate">{product.name}</p>
-                                <p className="text-sm text-muted-foreground">{formatPrice(product.price)}</p>
+                                <p className="text-sm text-muted-foreground">{format(product.price)}</p>
                               </div>
                             </Link>
                           </li>
