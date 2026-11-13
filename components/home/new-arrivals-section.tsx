@@ -215,7 +215,7 @@ export function NewArrivalsSection({ products }: Props) {
             role="group"
             aria-roledescription="karusel"
             aria-label="Yangi kelgan mahsulotlar"
-            className="-mx-4 px-4 flex gap-6 overflow-x-auto scrollbar-hide snap-x snap-mandatory pt-2 pb-6"
+            className="-mx-4 px-4 scroll-px-4 flex gap-6 overflow-x-auto scrollbar-hide snap-x snap-mandatory pt-2 pb-6"
             style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             onPointerEnter={(event) => { if (event.pointerType === "mouse") holdRef.current.hover = true }}
             onPointerLeave={() => { holdRef.current.hover = false }}

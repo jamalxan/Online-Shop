@@ -277,13 +277,15 @@ export function CheckoutForm({ user, total, onSuccess }: CheckoutFormProps) {
     )
   }
 
+  // 16px on phones: iOS zooms the whole page in when a focused field's text is smaller than that
   const inputClass =
-    "mt-1 w-full rounded-lg border border-border bg-background px-4 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    "mt-1 w-full rounded-lg border border-border bg-background px-4 py-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
 
   return (
     <div className="space-y-6">
       {/* Progress Steps */}
-      <ol className="flex items-center gap-2 overflow-x-auto pb-4 sm:gap-4">
+      {/* On a phone only the current step is spelled out; the others are their number (or a tick). */}
+      <ol className="flex items-center gap-1 overflow-x-auto pb-4 sm:gap-4">
         {steps.map((step, index) => {
           const isCompleted = completedSteps.includes(step.id)
           const isCurrent = currentStep === step.id
@@ -293,15 +295,16 @@ export function CheckoutForm({ user, total, onSuccess }: CheckoutFormProps) {
                 type="button"
                 onClick={() => goTo(step.id)}
                 aria-current={isCurrent ? "step" : undefined}
+                aria-label={`${index + 1}-bosqich: ${step.name}`}
                 className={cn(
-                  "flex items-center gap-3 rounded-full px-4 py-2 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex min-h-9 items-center gap-2 rounded-full px-3 py-2 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-3 sm:px-4",
                   isCurrent ? "bg-foreground text-background" : isCompleted ? "bg-secondary text-foreground" : "text-muted-foreground"
                 )}
               >
                 {isCompleted ? <Check className="h-4 w-4" aria-hidden="true" /> : <span className="text-sm font-medium">{index + 1}</span>}
-                <span className="text-sm font-medium">{step.name}</span>
+                <span className={cn("text-sm font-medium", !isCurrent && "hidden sm:inline")}>{step.name}</span>
               </button>
-              {index < steps.length - 1 && <ChevronRight className="mx-1 h-4 w-4 shrink-0 text-muted-foreground sm:mx-2" aria-hidden="true" />}
+              {index < steps.length - 1 && <ChevronRight className="mx-0.5 h-4 w-4 shrink-0 text-muted-foreground sm:mx-2" aria-hidden="true" />}
             </li>
           )
         })}

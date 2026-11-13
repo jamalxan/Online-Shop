@@ -46,7 +46,7 @@ export function DemoPaymentDialog({ option, total, open, onClose, onPay }: Props
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !processing) { setError(""); onClose() } }}>
-      <DialogContent showCloseButton={false} className="max-w-sm gap-0 rounded-2xl p-0">
+      <DialogContent showCloseButton={false} className="max-w-[min(24rem,calc(100%-2rem))] gap-0 rounded-2xl p-0">
         <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
           <PaymentMark method={option.id} size="lg" />
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">

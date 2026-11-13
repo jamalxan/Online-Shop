@@ -64,7 +64,7 @@ export default function CheckoutPage() {
             </div>
 
             <div className="grid gap-8 lg:grid-cols-3 lg:gap-12">
-              <div className={orderPlaced ? "lg:col-span-3 mx-auto w-full max-w-2xl" : "lg:col-span-2"}>
+              <div className={orderPlaced ? "lg:col-span-3 mx-auto w-full max-w-2xl min-w-0" : "lg:col-span-2 min-w-0"}>
                 <CheckoutForm
                   user={user}
                   total={cartTotal}
